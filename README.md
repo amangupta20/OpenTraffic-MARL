@@ -79,6 +79,12 @@ make local-eval
 
 # Visual demo with sumo-gui
 make local-demo
+
+# Run offline comparison (dumb vs PPO) — saves plots to results/
+make local-compare
+
+# Launch TensorBoard
+make local-tb
 ```
 
 ## Metrics Exposed
@@ -87,3 +93,4 @@ make local-demo
 - `traffic_wait_time_total` — cumulative wait time
 - `agent_reward_total` — current step reward
 - `agent_switch_penalty` — switch penalty applied
+- `traffic_throughput` — vehicles that completed their trip per step
