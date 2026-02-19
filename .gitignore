@@ -17,6 +17,7 @@ models/*.zip
 
 # TensorBoard
 tb_logs/
+results/
 
 # IDE
 .idea/

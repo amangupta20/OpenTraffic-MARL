@@ -1,4 +1,4 @@
-.PHONY: build up down train evaluate demo logs clean
+.PHONY: build up down train evaluate demo logs clean local-dumb local-train local-eval local-demo local-compare local-tb
 
 # Build Docker images
 build:
@@ -52,3 +52,9 @@ local-eval:
 
 local-demo:
 	$(PY) -m src.smart_controller --demo
+
+local-compare:
+	$(PY) -m src.compare
+
+local-tb:
+	$(PY) -m tensorboard.main --logdir=tb_logs --host=0.0.0.0 --port=6006

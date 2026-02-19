@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+import subprocess
+import signal
 from typing import Any, Optional
 
 import gymnasium as gym
@@ -127,6 +129,16 @@ class SumoEnv(gym.Env):
             self._sumo.close()
         except Exception:
             pass
+        # Kill any orphaned sumo/sumo-gui processes
+        for name in ("sumo", "sumo-gui"):
+            try:
+                subprocess.run(
+                    ["pkill", "-f", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Gymnasium API

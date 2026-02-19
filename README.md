@@ -41,7 +41,7 @@ make up
 | Service | URL | Description |
 |---------|-----|-------------|
 | Grafana | http://localhost:3000 | Metrics dashboard (admin/admin) |
-| Prometheus | http://localhost:9090 | Metrics store |
+| Prometheus | http://localhost:9010 | Metrics store |
 | TensorBoard | http://localhost:6006 | Training curves |
 | noVNC Demo | http://localhost:6080 | Live SUMO simulation |
 | Metrics | http://localhost:8000 | Prometheus scrape endpoint |
