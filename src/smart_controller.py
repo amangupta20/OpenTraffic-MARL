@@ -16,6 +16,9 @@ import time
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.utils import set_random_seed
 
 from src.env import SumoEnv
 from src.metrics import start_metrics_server, update
@@ -47,17 +50,33 @@ def train(
     metrics_port: int = 8000,
     learning_rate: float = 3e-4,
     device: str = "auto",
+    num_envs: int = 8,
 ) -> None:
-    """Train PPO agent with libsumo backend."""
+    """Train PPO agent with libsumo backend (supports parallel envs)."""
 
     start_metrics_server(metrics_port)
     MODELS_DIR.mkdir(exist_ok=True)
     TB_LOG_DIR.mkdir(exist_ok=True)
 
-    env = SumoEnv(
-        use_gui=False,
-        delta_time=delta_time,
-        switch_penalty=switch_penalty,
+    # Factory for creating env instances
+    def make_env(rank: int, seed: int = 0):
+        def _init():
+            e = SumoEnv(
+                use_gui=False,
+                delta_time=delta_time,
+                switch_penalty=switch_penalty,
+                sumo_seed=seed + rank,
+            )
+            return e
+        return _init
+
+    # Create vectorized environment
+    # libsumo requires SubprocVecEnv because it uses global state
+    env = make_vec_env(
+        make_env(0),
+        n_envs=num_envs,
+        seed=42,
+        vec_env_cls=SubprocVecEnv,
     )
 
     model = PPO(
@@ -75,7 +94,7 @@ def train(
         device=device,
     )
 
-    print(f"[smart] Using device: {model.device}")
+    print(f"[smart] Using device: {model.device} with {num_envs} parallel environments")
 
     print(f"[smart] Training PPO for {total_timesteps} timesteps...")
     model.learn(
@@ -144,6 +163,9 @@ def evaluate(
                 f"wait={wt:.0f}  reward={reward:.1f}"
             )
 
+        if use_gui:
+            time.sleep(1.0)  # 5x realtime (5s sim step takes 1s real time)
+
     env.close()
     print(f"[smart-{mode_label}] Done. Total reward: {total_reward:.1f}")
 
@@ -181,6 +203,9 @@ def main():
         "--device", type=str, default="auto", choices=["auto", "cpu", "cuda"],
         help="Device for training: auto (detect GPU), cpu, or cuda",
     )
+    parser.add_argument(
+        "--num-envs", type=int, default=4, help="Number of parallel envs (CPU cores)"
+    )
     args = parser.parse_args()
 
     if args.train:
@@ -190,6 +215,7 @@ def main():
             metrics_port=args.port,
             learning_rate=args.lr,
             device=args.device,
+            num_envs=args.num_envs,
         )
     elif args.evaluate:
         evaluate(

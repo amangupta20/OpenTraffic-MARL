@@ -192,8 +192,10 @@ class SumoEnv(gym.Env):
             # else: keep current green, do nothing
 
         # Advance simulation by delta_time seconds
+        arrived = 0
         for _ in range(self.delta_time):
             self._sumo.simulationStep()
+            arrived += self._sumo.simulation.getArrivedNumber()
         self._step_count += self.delta_time
         self._time_since_switch += self.delta_time
 
@@ -205,7 +207,9 @@ class SumoEnv(gym.Env):
         obs = self._get_obs()
         terminated = self._step_count >= self.max_steps
         truncated = False
-        info = self._get_info(reward=reward, switched=switched)
+        info = self._get_info(
+            reward=reward, switched=switched, throughput=arrived
+        )
 
         return obs, reward, terminated, truncated, info
 
@@ -239,11 +243,14 @@ class SumoEnv(gym.Env):
             dtype=np.float32,
         )
 
-    def _get_info(self, reward: float, switched: bool) -> dict[str, Any]:
+    def _get_info(
+        self, reward: float, switched: bool, throughput: int = 0
+    ) -> dict[str, Any]:
         return {
             "queue_length": self._total_queue_length(),
             "wait_time_total": self._total_wait_time(),
             "reward": reward,
             "switch_penalty": -self.switch_penalty if switched else 0.0,
+            "throughput": throughput,
             "step": self._step_count,
         }

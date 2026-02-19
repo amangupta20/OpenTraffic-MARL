@@ -29,6 +29,12 @@ agent_switch_penalty = Gauge(
     "Switch penalty applied at current step (0 or -alpha)",
 )
 
+traffic_throughput = Gauge(
+    "traffic_throughput",
+    "Number of vehicles that arrived (completed trip) in the last step",
+)
+
+
 
 def start_metrics_server(port: int = 8000) -> None:
     """Start the Prometheus HTTP endpoint in a background thread."""
@@ -42,3 +48,4 @@ def update(info: dict) -> None:
     traffic_wait_time_total.set(info.get("wait_time_total", 0))
     agent_reward_total.set(info.get("reward", 0))
     agent_switch_penalty.set(info.get("switch_penalty", 0))
+    traffic_throughput.set(info.get("throughput", 0))
