@@ -63,6 +63,7 @@ class SumoEnv(gym.Env):
         switch_penalty: float = 2.0,
         sumo_seed: int | str = "random",
         render_mode: Optional[str] = None,
+        gui_delay: int = 200,
     ) -> None:
         super().__init__()
 
@@ -73,6 +74,7 @@ class SumoEnv(gym.Env):
         self.switch_penalty = switch_penalty
         self.sumo_seed = sumo_seed
         self.render_mode = render_mode
+        self.gui_delay = gui_delay        # ms delay per sim step in GUI
 
         # Will be set in reset()
         self._sumo = None  # libsumo or traci module
@@ -115,7 +117,7 @@ class SumoEnv(gym.Env):
             cmd += ["--seed", str(self.sumo_seed)]
 
         if self.use_gui:
-            cmd += ["--start", "--quit-on-end"]
+            cmd += ["--start", "--quit-on-end", "--delay", str(self.gui_delay)]
             self._sumo.start(cmd)
         else:
             self._sumo.start(cmd)

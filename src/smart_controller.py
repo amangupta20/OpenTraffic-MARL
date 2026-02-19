@@ -163,9 +163,6 @@ def evaluate(
                 f"wait={wt:.0f}  reward={reward:.1f}"
             )
 
-        if use_gui:
-            time.sleep(1.0)  # 5x realtime (5s sim step takes 1s real time)
-
     env.close()
     print(f"[smart-{mode_label}] Done. Total reward: {total_reward:.1f}")
 
