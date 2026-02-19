@@ -46,6 +46,7 @@ def train(
     switch_penalty: float = 2.0,
     metrics_port: int = 8000,
     learning_rate: float = 3e-4,
+    device: str = "auto",
 ) -> None:
     """Train PPO agent with libsumo backend."""
 
@@ -71,7 +72,10 @@ def train(
         gae_lambda=0.95,
         clip_range=0.2,
         tensorboard_log=str(TB_LOG_DIR),
+        device=device,
     )
+
+    print(f"[smart] Using device: {model.device}")
 
     print(f"[smart] Training PPO for {total_timesteps} timesteps...")
     model.learn(
@@ -173,6 +177,10 @@ def main():
     parser.add_argument(
         "--max-steps", type=int, default=3600, help="Simulation seconds"
     )
+    parser.add_argument(
+        "--device", type=str, default="auto", choices=["auto", "cpu", "cuda"],
+        help="Device for training: auto (detect GPU), cpu, or cuda",
+    )
     args = parser.parse_args()
 
     if args.train:
@@ -181,6 +189,7 @@ def main():
             switch_penalty=args.switch_penalty,
             metrics_port=args.port,
             learning_rate=args.lr,
+            device=args.device,
         )
     elif args.evaluate:
         evaluate(
