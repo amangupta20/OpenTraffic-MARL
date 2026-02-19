@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Vehicle routes: random flows across all 4 approaches.
+  ~400 veh/hr per approach = moderate congestion.
+-->
+<routes>
+    <!-- Vehicle type -->
+    <vType id="car" accel="2.6" decel="4.5" sigma="0.5" length="5" maxSpeed="13.89"/>
+
+    <!-- North-South flows -->
+    <flow id="n2s" type="car" from="north_to_center" to="center_to_south"
+          begin="0" end="3600" probability="0.11" departLane="best" departSpeed="max"/>
+    <flow id="s2n" type="car" from="south_to_center" to="center_to_north"
+          begin="0" end="3600" probability="0.11" departLane="best" departSpeed="max"/>
+
+    <!-- East-West flows -->
+    <flow id="e2w" type="car" from="east_to_center" to="center_to_west"
+          begin="0" end="3600" probability="0.11" departLane="best" departSpeed="max"/>
+    <flow id="w2e" type="car" from="west_to_center" to="center_to_east"
+          begin="0" end="3600" probability="0.11" departLane="best" departSpeed="max"/>
+
+    <!-- Turning flows (lower volume) -->
+    <flow id="n2e" type="car" from="north_to_center" to="center_to_east"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="n2w" type="car" from="north_to_center" to="center_to_west"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="s2e" type="car" from="south_to_center" to="center_to_east"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="s2w" type="car" from="south_to_center" to="center_to_west"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="e2n" type="car" from="east_to_center" to="center_to_north"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="e2s" type="car" from="east_to_center" to="center_to_south"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="w2n" type="car" from="west_to_center" to="center_to_north"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+    <flow id="w2s" type="car" from="west_to_center" to="center_to_south"
+          begin="0" end="3600" probability="0.04" departLane="best" departSpeed="max"/>
+</routes>

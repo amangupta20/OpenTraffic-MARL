@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Simple 4-way signalized intersection for MARL traffic control.
+  2 lanes per approach, 200m arms.
+-->
+<nodes>
+    <!-- Center intersection -->
+    <node id="center" x="0" y="0" type="traffic_light"/>
+
+    <!-- North/South/East/West endpoints -->
+    <node id="north" x="0" y="200" type="priority"/>
+    <node id="south" x="0" y="-200" type="priority"/>
+    <node id="east" x="200" y="0" type="priority"/>
+    <node id="west" x="-200" y="0" type="priority"/>
+</nodes>
