@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# SUMO
+*.log
+tripinfo.xml
+
+# Models
+models/*.zip
+
+# TensorBoard
+tb_logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.env
+
+# OS
+.DS_Store
+Thumbs.db
