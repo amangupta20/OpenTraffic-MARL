@@ -65,17 +65,20 @@ docker compose up traffic-demo
 ## Local Development (Arch Linux)
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Train locally
-python src/smart_controller.py --train
+# One-time setup: create venv with system-site-packages (needed for libsumo)
+make venv
 
 # Run dumb baseline
-python src/dumb_controller.py
+make local-dumb
 
-# Visual demo with saved weights
-python src/smart_controller.py --demo
+# Train PPO agent
+make local-train
+
+# Evaluate saved model
+make local-eval
+
+# Visual demo with sumo-gui
+make local-demo
 ```
 
 ## Metrics Exposed

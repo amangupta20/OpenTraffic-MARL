@@ -32,15 +32,23 @@ logs:
 clean:
 	rm -rf models/*.zip tb_logs/*
 
+# --- Local dev setup ---
+SUMO_ENV = SUMO_HOME=/usr/share/sumo PYTHONPATH=.:/usr/share/sumo/tools CUDA_VISIBLE_DEVICES=
+PY = $(SUMO_ENV) .venv/bin/python
+
+venv:
+	uv venv --system-site-packages --python /usr/bin/python3 .venv
+	uv pip install gymnasium 'stable-baselines3[extra]' prometheus-client tensorboard numpy
+
 # --- Local dev commands (no Docker) ---
 local-dumb:
-	python -m src.dumb_controller
+	$(PY) -m src.dumb_controller
 
 local-train:
-	python -m src.smart_controller --train
+	$(PY) -m src.smart_controller --train
 
 local-eval:
-	python -m src.smart_controller --evaluate
+	$(PY) -m src.smart_controller --evaluate
 
 local-demo:
-	python -m src.smart_controller --demo
+	$(PY) -m src.smart_controller --demo
