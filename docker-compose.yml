@@ -1,0 +1,78 @@
+services:
+  # ---------------------------------------------------------------
+  # Traffic Agent (headless – for training/evaluation + metrics)
+  # ---------------------------------------------------------------
+  traffic-agent:
+    build: .
+    container_name: traffic-agent
+    environment:
+      - MODE=${MODE:-dumb}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./tb_logs:/app/tb_logs
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Visual Demo (sumo-gui streamed via noVNC)
+  # ---------------------------------------------------------------
+  traffic-demo:
+    build: .
+    container_name: traffic-demo
+    environment:
+      - MODE=demo
+    ports:
+      - "6080:6080"
+      - "8001:8000"
+    volumes:
+      - ./models:/app/models
+    profiles:
+      - demo
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Prometheus
+  # ---------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Grafana
+  # ---------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/traffic.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # TensorBoard
+  # ---------------------------------------------------------------
+  tensorboard:
+    image: tensorflow/tensorflow:latest
+    container_name: tensorboard
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./tb_logs:/tb_logs:ro
+    command: tensorboard --logdir=/tb_logs --host=0.0.0.0 --port=6006
+    profiles:
+      - train
+    restart: unless-stopped

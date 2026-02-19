@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "traffic-agent"
+    static_configs:
+      - targets: ["traffic-agent:8000"]
+        labels:
+          mode: "agent"
+
+  - job_name: "traffic-demo"
+    static_configs:
+      - targets: ["traffic-demo:8000"]
+        labels:
+          mode: "demo"
