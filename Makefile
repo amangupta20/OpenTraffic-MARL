@@ -1,4 +1,4 @@
-.PHONY: build train eval dumb compare demo tb dashboard down logs clean wandb-login
+.PHONY: build train eval dumb compare grid-eval grid-static grid-compare demo tb dashboard down logs clean wandb-login
 
 # ═══════════════════════════════════════════════════════════════════
 # Docker-first workflow (reproducible, host-independent)
@@ -24,6 +24,22 @@ dumb:
 # Run offline comparison (static-timer vs PPO)
 compare:
 	docker compose run --rm -e MODE=compare agent $(ARGS)
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 2: 2×2 Grid — Independent Multi-Agent
+# ═══════════════════════════════════════════════════════════════════
+
+# Evaluate cloned PPO agents on 2×2 grid
+grid-eval:
+	docker compose run --rm -e MODE=grid-eval agent $(ARGS)
+
+# Run static-timer baseline on 2×2 grid
+grid-static:
+	docker compose run --rm -e MODE=grid-static agent $(ARGS)
+
+# Compare static vs cloned PPO on 2×2 grid
+grid-compare:
+	docker compose run --rm -e MODE=grid-compare agent $(ARGS)
 
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:

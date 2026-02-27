@@ -2,9 +2,11 @@
 # New stages add entries here; agents use make_env() to instantiate.
 
 from src.envs.single_intersection import SumoSingleIntersectionEnv
+from src.envs.grid_2x2 import SumoGrid2x2Env
 
 ENV_REGISTRY = {
     "single_intersection": SumoSingleIntersectionEnv,
+    "grid_2x2": SumoGrid2x2Env,
 }
 
 

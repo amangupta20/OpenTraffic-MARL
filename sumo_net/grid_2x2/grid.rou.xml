@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Vehicle routes and flows for a 2×2 signalized grid.
+
+    Boundary nodes:
+      top0, top1        (north edge)
+      bottom0, bottom1  (south edge)
+      left0, left1      (west edge)
+      right0, right1    (east edge)
+
+    Through-traffic probability: 0.10 per second (~360 veh/hr per flow)
+    Turning traffic probability: 0.03 per second (~108 veh/hr per flow)
+-->
+<routes>
+    <vType id="car" accel="2.6" decel="4.5" sigma="0.5" length="5" maxSpeed="13.89"/>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- North–South through traffic                             -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <flow id="top0_to_bottom0" type="car" begin="0" end="3600"
+          from="top0A1" to="A0bottom0" probability="0.10"/>
+    <flow id="bottom0_to_top0" type="car" begin="0" end="3600"
+          from="bottom0A0" to="A1top0" probability="0.10"/>
+    <flow id="top1_to_bottom1" type="car" begin="0" end="3600"
+          from="top1B1" to="B0bottom1" probability="0.10"/>
+    <flow id="bottom1_to_top1" type="car" begin="0" end="3600"
+          from="bottom1B0" to="B1top1" probability="0.10"/>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- East–West through traffic                               -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <flow id="left0_to_right0" type="car" begin="0" end="3600"
+          from="left0A0" to="B0right0" probability="0.10"/>
+    <flow id="right0_to_left0" type="car" begin="0" end="3600"
+          from="right0B0" to="A0left0" probability="0.10"/>
+    <flow id="left1_to_right1" type="car" begin="0" end="3600"
+          from="left1A1" to="B1right1" probability="0.10"/>
+    <flow id="right1_to_left1" type="car" begin="0" end="3600"
+          from="right1B1" to="A1left1" probability="0.10"/>
+
+    <!-- ════════════════════════════════════════════════════════ -->
+    <!-- Turning traffic (boundary to boundary, cross-grid)      -->
+    <!-- ════════════════════════════════════════════════════════ -->
+    <flow id="top0_to_right0" type="car" begin="0" end="3600"
+          from="top0A1" to="B0right0" probability="0.03"/>
+    <flow id="top1_to_left0" type="car" begin="0" end="3600"
+          from="top1B1" to="A0left0" probability="0.03"/>
+    <flow id="bottom0_to_right1" type="car" begin="0" end="3600"
+          from="bottom0A0" to="B1right1" probability="0.03"/>
+    <flow id="bottom1_to_left1" type="car" begin="0" end="3600"
+          from="bottom1B0" to="A1left1" probability="0.03"/>
+
+    <flow id="left0_to_top0" type="car" begin="0" end="3600"
+          from="left0A0" to="A1top0" probability="0.03"/>
+    <flow id="left1_to_bottom0" type="car" begin="0" end="3600"
+          from="left1A1" to="A0bottom0" probability="0.03"/>
+    <flow id="right0_to_top1" type="car" begin="0" end="3600"
+          from="right0B0" to="B1top1" probability="0.03"/>
+    <flow id="right1_to_bottom1" type="car" begin="0" end="3600"
+          from="right1B1" to="B0bottom1" probability="0.03"/>
+</routes>

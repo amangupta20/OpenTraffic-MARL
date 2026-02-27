@@ -45,8 +45,22 @@ case "$MODE" in
     echo "[entrypoint] Logging into Weights & Biases"
     exec python3 -m wandb login "$@"
     ;;
+  grid-eval)
+    echo "[entrypoint] Evaluating cloned PPO agents on 2×2 grid"
+    exec python3 -m src.agents.independent_ppo --evaluate "$@"
+    ;;
+  grid-static)
+    echo "[entrypoint] Running static-timer baseline on 2×2 grid"
+    exec python3 -m src.agents.independent_ppo --static "$@"
+    ;;
+  grid-compare)
+    echo "[entrypoint] Comparing static vs cloned PPO on 2×2 grid"
+    exec python3 -m src.agents.independent_ppo --compare "$@"
+    ;;
   *)
-    echo "[entrypoint] Unknown MODE=$MODE (use: dumb|train|evaluate|compare|demo|wandb-login)"
+    echo "[entrypoint] Unknown MODE=$MODE"
+    echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
+    echo "             grid-eval|grid-static|grid-compare"
     exit 1
     ;;
 esac

@@ -9,22 +9,25 @@ A reproducible Multi-Agent Reinforcement Learning framework for urban traffic si
 marl/
 ├── src/
 │   ├── envs/                              # Gymnasium environments
-│   │   ├── __init__.py                    # ENV_REGISTRY — lookup by name
-│   │   └── single_intersection.py         # 4-way single intersection
+│   │   ├── __init__.py                    # ENV_REGISTRY
+│   │   ├── single_intersection.py         # Stage 1: single 4-way intersection
+│   │   └── grid_2x2.py                   # Stage 2: 2×2 grid (4 junctions)
 │   ├── agents/                            # RL agents
-│   │   └── ppo.py                         # PPO train / eval / demo
+│   │   ├── ppo.py                         # Single-agent PPO train / eval
+│   │   └── independent_ppo.py             # Multi-agent: cloned PPO per junction
 │   ├── baselines/                         # Non-learning controllers
-│   │   └── static_timer.py                # Fixed 40s green cycle
+│   │   └── static_timer.py                # Fixed-cycle baseline
 │   ├── evaluation/                        # Comparison & analysis
 │   │   └── compare.py                     # Static vs PPO comparison
-│   └── utils/                             # Shared utilities
+│   └── utils/
 │       └── metrics.py                     # Prometheus gauges
 ├── sumo_net/
-│   └── single_intersection/               # SUMO network files
-├── docker-compose.yml
+│   ├── single_intersection/               # Stage 1 network
+│   └── grid_2x2/                          # Stage 2 network (4 TLS junctions)
 ├── Dockerfile
+├── docker-compose.yml
 ├── Makefile
-├── TECHNICAL.md                           # Full technical spec
+├── TECHNICAL.md
 └── README.md
 ```
 
@@ -34,7 +37,7 @@ marl/
 # Build the container (once)
 make build
 
-# Train PPO agent (100K steps by default)
+# Train PPO agent on single intersection (100K steps)
 make train ARGS="--run-name baseline --timesteps 100000"
 
 # Evaluate trained model
@@ -43,11 +46,26 @@ make eval
 # Run static-timer baseline
 make dumb
 
-# Compare static-timer vs PPO (generates plots + logs to W&B)
+# Compare static-timer vs PPO (generates plots)
 make compare
 
 # Visual demo (sumo-gui at http://localhost:6080)
 make demo
+```
+
+## Stage 2: 2×2 Grid — Independent Multi-Agent
+
+Deploy the trained single-intersection model across 4 junctions (zero-shot cloning):
+
+```bash
+# Evaluate 4 cloned PPO agents on the 2×2 grid
+make grid-eval
+
+# Run static-timer baseline on the grid (30s green cycles)
+make grid-static
+
+# Compare static vs cloned PPO (generates comparison plot)
+make grid-compare
 ```
 
 ## Experiment Tracking (Weights & Biases)
@@ -56,14 +74,11 @@ make demo
 # Set your W&B API key (get it from https://wandb.ai/authorize)
 export WANDB_API_KEY=your_key_here
 
-# Train with a descriptive run name and notes
+# Train with descriptive run name and notes
 make train ARGS="--run-name baseline --notes 'Original queue-based reward' --timesteps 100000"
 
 # Auto-run comparison after training
 make train ARGS="--run-name baseline --timesteps 100000 --compare-static"
-
-# Select a different environment (when available)
-make train ARGS="--env single_intersection --run-name grid-test"
 ```
 
 Every training run automatically captures:

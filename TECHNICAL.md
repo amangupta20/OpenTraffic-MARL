@@ -258,9 +258,67 @@ For controlled comparison, a **fixed-cycle controller** provides a non-learning 
 
 ---
 
-## 6. Experiment Tracking & Reproducibility
+## 6. Stage 2: 2×2 Grid — Independent Multi-Agent
 
-### 6.1 Weights & Biases Integration
+### 6.1 Grid Topology
+
+```
+       top0     top1
+        |        |
+left1--[A1]----[B1]--right1
+        |        |
+left0--[A0]----[B0]--right0
+        |        |
+     bottom0  bottom1
+```
+
+| Parameter | Value |
+|-----------|-------|
+| Grid dimensions | 2×2 (4 signalized junctions) |
+| Junction IDs | `A0`, `A1`, `B0`, `B1` |
+| Arm length | 200m (inter-junction) + 200m (boundary attach) |
+| Lanes per approach | 2 |
+| Incoming lanes per junction | 8 |
+| Total incoming lanes | 32 |
+
+Generated via: `netgenerate --grid --grid.x-number 2 --grid.y-number 2 --grid.x-length 200 --grid.y-length 200 --grid.attach-length 200 --default.lanenumber 2 --tls.guess`
+
+### 6.2 Traffic Flows
+
+| Flow Type | Probability | Volume (per flow) |
+|-----------|:-----------:|:-----------------:|
+| Through (N↔S, E↔W) | `p = 0.10` | ~360 veh/hr |
+| Turning (cross-grid) | `p = 0.03` | ~108 veh/hr |
+
+### 6.3 Multi-Agent Architecture
+
+**Approach:** Independent PPO (zero-shot cloning from single-intersection model).
+
+Each junction is controlled by a **clone** of the trained single-intersection PPO model.
+Agents share weights but act independently — no communication between junctions.
+
+| Property | Value |
+|----------|-------|
+| Agents | 4 (one per junction) |
+| Observation per agent | 10-dim vector (identical to single intersection) |
+| Action per agent | Discrete(2) — keep / switch |
+| Reward per agent | $-Q_j(t) - \alpha \cdot \mathbb{1}[\text{switched}_j]$ |
+| Global reward | $\sum_{j \in \{A0,A1,B0,B1\}} R_j(t)$ |
+| Model weights | Loaded from `models/ppo_traffic.zip` (no retraining) |
+
+### 6.4 Grid Static-Timer Baseline
+
+| Parameter | Value |
+|-----------|-------|
+| Green Duration | 30 seconds per phase |
+| Yellow Duration | 5 seconds |
+| Applied to | All 4 junctions simultaneously |
+
+---
+
+## 7. Experiment Tracking & Reproducibility
+
+### 7.1 Weights & Biases Integration
 
 Every training run automatically captures:
 
@@ -275,7 +333,7 @@ Every training run automatically captures:
 | CLI command used | Auto-captured by W&B |
 | Source code snapshot | `save_code=True` |
 
-### 6.2 Custom Run Labelling
+### 7.2 Custom Run Labelling
 
 ```bash
 # CLI flags for intuitive experiment tracking
@@ -284,7 +342,7 @@ Every training run automatically captures:
 --compare-static                         # Auto-run vs static timer after training
 ```
 
-### 6.3 Live Monitoring Stack
+### 7.3 Live Monitoring Stack
 
 | Service | Port | Purpose |
 |---------|:----:|---------|
@@ -293,7 +351,7 @@ Every training run automatically captures:
 | TensorBoard | 6006 | Training curves (PPO loss components) |
 | noVNC | 6080 | Browser-streamed SUMO GUI demo |
 
-### 6.4 Prometheus Gauges
+### 7.4 Prometheus Gauges
 
 ```python
 traffic_queue_length      # Halting vehicle count (all lanes)
@@ -305,9 +363,9 @@ traffic_throughput        # Vehicles arrived (completed trip) per step
 
 ---
 
-## 7. Infrastructure
+## 8. Infrastructure
 
-### 7.1 Reproducibility Model
+### 8.1 Reproducibility Model
 
 All experiments execute inside Docker containers, eliminating host-specific dependencies
 (Python version, SUMO build, library versions). The only requirement on the host is Docker.
@@ -342,7 +400,7 @@ graph TB
 - The container is stateless — all persistent data lives on the host via volume mounts
 - `docker compose run --rm` creates a fresh container for each experiment
 
-### 7.2 Execution Model
+### 8.2 Execution Model
 
 Every experiment command maps to a Docker Compose service invocation:
 
@@ -360,7 +418,7 @@ docker compose run --rm -e MODE=train agent --run-name baseline --timesteps 1000
 | `make compare` | `compare` | `src.evaluation.compare` | `results/` |
 | `make demo` | `demo` | `src.agents.ppo --demo` + noVNC | — |
 
-### 7.3 Dual SUMO Backend
+### 8.3 Dual SUMO Backend
 
 Inside the container, the environment dynamically selects the SUMO interface:
 
@@ -369,7 +427,7 @@ Inside the container, the environment dynamically selects the SUMO interface:
 | Training / Evaluation / Compare | `libsumo` | `sumo` (in-process) | Maximum throughput — no IPC overhead |
 | Demo | `traci` | `sumo-gui` (subprocess) | Visual rendering via Xvfb → x11vnc → noVNC |
 
-### 7.4 Persistent Volume Mounts
+### 8.4 Persistent Volume Mounts
 
 All experiment outputs survive container teardown via host-mounted directories:
 
@@ -379,7 +437,7 @@ All experiment outputs survive container teardown via host-mounted directories:
 | `./tb_logs/` | `/app/tb_logs/` | TensorBoard event files |
 | `./results/` | `/app/results/` | Comparison CSVs and plots |
 
-### 7.5 W&B Credential Management
+### 8.5 W&B Credential Management
 
 The W&B API key is passed to the container via the `WANDB_API_KEY` environment variable:
 
@@ -394,7 +452,7 @@ environment:
   - WANDB_API_KEY=${WANDB_API_KEY:-}
 ```
 
-### 7.6 Docker Services
+### 8.6 Docker Services
 
 | Service | Image | Ports | Profile |
 |---------|-------|:-----:|:-------:|
@@ -404,7 +462,7 @@ environment:
 | `grafana` | `grafana/grafana:latest` | 3000 | default |
 | `tensorboard` | `tensorflow/tensorflow:latest` | 6006 | `monitoring` |
 
-### 7.7 File Structure
+### 8.7 File Structure
 
 ```
 marl/
