@@ -4,9 +4,9 @@
 # Docker-first workflow (reproducible, host-independent)
 # ═══════════════════════════════════════════════════════════════════
 
-# Build the container image
+# Build all container images (including demo)
 build:
-	docker compose build
+	docker compose --profile demo build
 
 # Train PPO agent
 #   make train ARGS="--run-name baseline --timesteps 100000 --compare-static"
@@ -43,7 +43,7 @@ grid-compare:
 
 # Visual demo of 4 cloned PPO agents on 2×2 grid (noVNC at http://localhost:6080)
 grid-demo:
-	docker compose --profile demo run --rm --service-ports -e MODE=grid-demo demo $(ARGS)
+	docker compose run --rm -p 6080:6080 -e MODE=grid-demo agent $(ARGS)
 
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:

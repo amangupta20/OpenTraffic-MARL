@@ -66,6 +66,9 @@ make grid-static
 
 # Compare static vs cloned PPO (generates comparison plot)
 make grid-compare
+
+# Visual demo via noVNC (sumo-gui at http://localhost:6080)
+make grid-demo
 ```
 
 ## Experiment Tracking (Weights & Biases)
