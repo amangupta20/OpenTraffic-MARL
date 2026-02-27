@@ -337,26 +337,35 @@ graph LR
 ```
 marl/
 ├── src/
-│   ├── env.py                # Gymnasium environment (dual backend)
-│   ├── smart_controller.py   # PPO train / evaluate / demo
-│   ├── dumb_controller.py    # Static-timer baseline
-│   ├── compare.py            # Offline comparison (CSV + plots + W&B)
-│   └── metrics.py            # Prometheus gauge definitions
+│   ├── envs/                              # Gymnasium environments
+│   │   ├── __init__.py                    # ENV_REGISTRY — lookup by name
+│   │   └── single_intersection.py         # 4-way single intersection
+│   ├── agents/                            # RL agents
+│   │   └── ppo.py                         # PPO train / evaluate / demo
+│   ├── baselines/                         # Non-learning controllers
+│   │   └── static_timer.py                # Fixed 40s green cycle
+│   ├── evaluation/                        # Comparison & analysis
+│   │   └── compare.py                     # Static vs PPO comparison + W&B
+│   └── utils/                             # Shared utilities
+│       └── metrics.py                     # Prometheus gauge definitions
 ├── sumo_net/
-│   ├── intersection.net.xml  # SUMO network topology
-│   ├── intersection.rou.xml  # Vehicle flow definitions
-│   └── intersection.sumocfg  # SUMO configuration
+│   └── single_intersection/               # Network files (organized by topology)
+│       ├── intersection.net.xml
+│       ├── intersection.nod.xml
+│       ├── intersection.edg.xml
+│       ├── intersection.rou.xml
+│       └── intersection.sumocfg
 ├── docker/
-│   └── entrypoint.sh         # Multi-mode container entrypoint
+│   └── entrypoint.sh                      # Multi-mode container entrypoint
 ├── prometheus/
-│   └── prometheus.yml        # Scrape configuration
+│   └── prometheus.yml                     # Scrape configuration
 ├── grafana/
-│   ├── provisioning/         # Auto-provisioned datasource
-│   └── dashboards/           # Pre-built traffic dashboard JSON
+│   ├── provisioning/                      # Auto-provisioned datasource
+│   └── dashboards/                        # Pre-built traffic dashboard JSON
 ├── Dockerfile
 ├── docker-compose.yml
 ├── Makefile
 ├── requirements.txt
-├── TECHNICAL.md              # This document
-└── README.md                 # Quick start guide
+├── TECHNICAL.md                           # This document
+└── README.md                              # Quick start guide
 ```

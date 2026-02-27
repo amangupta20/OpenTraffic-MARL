@@ -23,12 +23,12 @@ from stable_baselines3.common.utils import set_random_seed
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-from src.env import SumoEnv
-from src.metrics import start_metrics_server, update
-from src.compare import run_comparison
+from src.envs import make_env, ENV_REGISTRY
+from src.utils.metrics import start_metrics_server, update
+from src.evaluation.compare import run_comparison
 
-MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent / "models"
-TB_LOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "tb_logs"
+MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
+TB_LOG_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "tb_logs"
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,7 @@ def train(
     num_envs: int = 4,
     run_name: str | None = None,
     notes: str | None = None,
+    env_name: str = "single_intersection",
 ) -> None:
     """Train PPO agent with libsumo backend (supports parallel envs)."""
 
@@ -71,6 +72,7 @@ def train(
         "delta_time": delta_time,
         "switch_penalty": switch_penalty,
         "num_envs": num_envs,
+        "env": env_name,
         "n_steps": 512,
         "batch_size": 128,
         "n_epochs": 10,
@@ -90,9 +92,10 @@ def train(
     )
 
     # Factory for creating env instances
-    def make_env(rank: int, seed: int = 0):
+    def make_env_fn(rank: int, seed: int = 0):
         def _init():
-            e = SumoEnv(
+            e = make_env(
+                env_name,
                 use_gui=False,
                 delta_time=delta_time,
                 switch_penalty=switch_penalty,
@@ -104,7 +107,7 @@ def train(
     # Create vectorized environment
     # libsumo requires SubprocVecEnv because it uses global state
     env = make_vec_env(
-        make_env(0),
+        make_env_fn(0),
         n_envs=num_envs,
         seed=42,
         vec_env_cls=SubprocVecEnv,
@@ -170,6 +173,7 @@ def evaluate(
     use_gui: bool = False,
     metrics_port: int = 8000,
     max_steps: int = 3600,
+    env_name: str = "single_intersection",
 ) -> None:
     """Load saved model and run a deterministic evaluation episode."""
 
@@ -180,7 +184,8 @@ def evaluate(
             f"No saved model at {model_path}. Train first with --train."
         )
 
-    env = SumoEnv(
+    env = make_env(
+        env_name,
         use_gui=use_gui,
         max_steps=max_steps,
         delta_time=delta_time,
@@ -255,6 +260,11 @@ def main():
         "--num-envs", type=int, default=4, help="Number of parallel envs (CPU cores)"
     )
     parser.add_argument(
+        "--env", type=str, default="single_intersection",
+        choices=list(ENV_REGISTRY.keys()),
+        help="Environment to use",
+    )
+    parser.add_argument(
         "--run-name", type=str, default=None, help="Custom name for the W&B run (e.g., 'baseline')"
     )
     parser.add_argument(
@@ -276,6 +286,7 @@ def main():
             num_envs=args.num_envs,
             run_name=args.run_name,
             notes=args.notes,
+            env_name=args.env,
         )
         if args.compare_static:
             eval_name = f"{args.run_name or 'ppo'}_vs_static"
@@ -290,6 +301,7 @@ def main():
             switch_penalty=args.switch_penalty,
             metrics_port=args.port,
             max_steps=args.max_steps,
+            env_name=args.env,
         )
     elif args.demo:
         evaluate(
@@ -297,6 +309,7 @@ def main():
             switch_penalty=args.switch_penalty,
             metrics_port=args.port,
             max_steps=args.max_steps,
+            env_name=args.env,
         )
 
 

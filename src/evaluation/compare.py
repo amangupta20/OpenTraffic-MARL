@@ -26,18 +26,19 @@ import numpy as np
 import wandb
 from stable_baselines3 import PPO
 
-from src.env import SumoEnv
+from src.envs import make_env, ENV_REGISTRY
 
-RESULTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "results"
-MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent / "models"
+RESULTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "results"
+MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
 
 # ── Dumb controller logic (static 40s green cycle) ──────────────────
 DUMB_GREEN_DURATION = 40  # seconds per green phase
 
 
-def run_dumb(max_steps: int, delta_time: int, switch_penalty: float) -> list[dict]:
+def run_dumb(max_steps: int, delta_time: int, switch_penalty: float, env_name: str = "single_intersection") -> list[dict]:
     """Run the static-timer controller and collect per-step metrics."""
-    env = SumoEnv(
+    env = make_env(
+        env_name,
         use_gui=False,
         max_steps=max_steps,
         delta_time=delta_time,
@@ -67,13 +68,14 @@ def run_dumb(max_steps: int, delta_time: int, switch_penalty: float) -> list[dic
 
 # ── Smart controller logic (PPO) ────────────────────────────────────
 
-def run_ppo(max_steps: int, delta_time: int, switch_penalty: float) -> list[dict]:
+def run_ppo(max_steps: int, delta_time: int, switch_penalty: float, env_name: str = "single_intersection") -> list[dict]:
     """Run the trained PPO agent and collect per-step metrics."""
     model_path = MODELS_DIR / "ppo_traffic.zip"
     if not model_path.exists():
         raise FileNotFoundError(f"No saved model at {model_path}. Train first.")
 
-    env = SumoEnv(
+    env = make_env(
+        env_name,
         use_gui=False,
         max_steps=max_steps,
         delta_time=delta_time,
@@ -204,6 +206,7 @@ def run_comparison(
     delta_time: int = 5,
     switch_penalty: float = 2.0,
     wandb_run_name: str = "offline-comparison",
+    env_name: str = "single_intersection",
 ) -> None:
     """Run full dumb-vs-PPO comparison, save CSVs/plots, and log to W&B."""
 
@@ -212,10 +215,10 @@ def run_comparison(
     print("=" * 60)
 
     print("\n[1/5] Running baseline (static-timer) controller...")
-    dumb_records = run_dumb(max_steps, delta_time, switch_penalty)
+    dumb_records = run_dumb(max_steps, delta_time, switch_penalty, env_name)
 
     print("\n[2/5] Running PPO controller...")
-    ppo_records = run_ppo(max_steps, delta_time, switch_penalty)
+    ppo_records = run_ppo(max_steps, delta_time, switch_penalty, env_name)
 
     print("\n[3/5] Saving CSV files...")
     save_csv(dumb_records, RESULTS_DIR / "baseline_metrics.csv")
@@ -266,12 +269,18 @@ def main():
     parser.add_argument("--max-steps", type=int, default=3600, help="Simulation seconds")
     parser.add_argument("--delta-time", type=int, default=5, help="Seconds between decisions")
     parser.add_argument("--switch-penalty", type=float, default=2.0, help="Phase switch penalty")
+    parser.add_argument(
+        "--env", type=str, default="single_intersection",
+        choices=list(ENV_REGISTRY.keys()),
+        help="Environment to use",
+    )
     args = parser.parse_args()
 
     run_comparison(
         max_steps=args.max_steps,
         delta_time=args.delta_time,
         switch_penalty=args.switch_penalty,
+        env_name=args.env,
     )
 
 

@@ -7,16 +7,16 @@ MODE="${MODE:-dumb}"
 
 case "$MODE" in
   dumb)
-    echo "[entrypoint] Running dumb (static-timer) controller"
-    exec python -m src.dumb_controller --port 8000 "$@"
+    echo "[entrypoint] Running static-timer controller"
+    exec python -m src.baselines.static_timer --port 8000 "$@"
     ;;
   train)
     echo "[entrypoint] Training PPO agent"
-    exec python -m src.smart_controller --train --port 8000 "$@"
+    exec python -m src.agents.ppo --train --port 8000 "$@"
     ;;
   evaluate)
     echo "[entrypoint] Evaluating saved PPO model"
-    exec python -m src.smart_controller --evaluate --port 8000 "$@"
+    exec python -m src.agents.ppo --evaluate --port 8000 "$@"
     ;;
   demo)
     echo "[entrypoint] Starting visual demo (sumo-gui via noVNC)"
@@ -35,7 +35,7 @@ case "$MODE" in
     sleep 1
 
     echo "[entrypoint] noVNC available at http://localhost:6080"
-    exec python -m src.smart_controller --demo --port 8000 "$@"
+    exec python -m src.agents.ppo --demo --port 8000 "$@"
     ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE (use: dumb|train|evaluate|demo)"

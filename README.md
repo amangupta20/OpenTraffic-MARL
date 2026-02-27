@@ -2,6 +2,30 @@
 
 A reproducible Multi-Agent Reinforcement Learning framework for urban traffic signal control.
 
+## Project Structure
+
+```
+marl/
+├── src/
+│   ├── envs/                              # Gymnasium environments
+│   │   ├── __init__.py                    # ENV_REGISTRY — lookup by name
+│   │   └── single_intersection.py         # 4-way single intersection
+│   ├── agents/                            # RL agents
+│   │   └── ppo.py                         # PPO train / eval / demo
+│   ├── baselines/                         # Non-learning controllers
+│   │   └── static_timer.py                # Fixed 40s green cycle
+│   ├── evaluation/                        # Comparison & analysis
+│   │   └── compare.py                     # Static vs PPO comparison
+│   └── utils/                             # Shared utilities
+│       └── metrics.py                     # Prometheus gauges
+├── sumo_net/
+│   └── single_intersection/               # SUMO network files
+├── docker-compose.yml
+├── Makefile
+├── TECHNICAL.md                           # Full technical spec
+└── README.md
+```
+
 ## Architecture
 
 ```
@@ -46,32 +70,16 @@ make up
 | noVNC Demo | http://localhost:6080 | Live SUMO simulation |
 | Metrics | http://localhost:8000 | Prometheus scrape endpoint |
 
-## Modes
-
-```bash
-# Run dumb (static timer) baseline
-MODE=dumb docker compose up traffic-agent
-
-# Train PPO agent (fast, uses libsumo)
-MODE=train docker compose up traffic-agent
-
-# Evaluate trained agent
-MODE=evaluate docker compose up traffic-agent
-
-# Visual demo (streams sumo-gui via noVNC)
-docker compose up traffic-demo
-```
-
-## Local Development (Arch Linux)
+## Local Development
 
 ```bash
 # One-time setup: create venv with system-site-packages (needed for libsumo)
 make venv
 
-# Run dumb baseline
+# Run static-timer baseline
 make local-dumb
 
-# Train PPO agent
+# Train PPO agent (default: single_intersection env)
 make local-train
 
 # Evaluate saved model
@@ -80,11 +88,14 @@ make local-eval
 # Visual demo with sumo-gui
 make local-demo
 
-# Run offline comparison (dumb vs PPO) — saves plots to results/
+# Run offline comparison (static-timer vs PPO) — saves plots to results/
 make local-compare
 
 # Launch TensorBoard
 make local-tb
+
+# Select a different environment (when available)
+make local-train ARGS="--env single_intersection"
 ```
 
 ## Experiment Tracking (Weights & Biases)

@@ -45,19 +45,19 @@ wandb-login:
 	$(PY) -m wandb login
 
 local-dumb:
-	$(PY) -m src.dumb_controller $(ARGS)
+	$(PY) -m src.baselines.static_timer $(ARGS)
 
 local-train:
-	$(PY) -m src.smart_controller --train $(ARGS)
+	$(PY) -m src.agents.ppo --train $(ARGS)
 
 local-eval:
-	$(PY) -m src.smart_controller --evaluate $(ARGS)
+	$(PY) -m src.agents.ppo --evaluate $(ARGS)
 
 local-demo:
-	$(PY) -m src.smart_controller --demo $(ARGS)
+	$(PY) -m src.agents.ppo --demo $(ARGS)
 
 local-compare:
-	$(PY) -m src.compare
+	$(PY) -m src.evaluation.compare $(ARGS)
 
 local-tb:
 	$(PY) -m tensorboard.main --logdir=tb_logs --host=0.0.0.0 --port=6006

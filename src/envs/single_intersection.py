@@ -27,7 +27,7 @@ from gymnasium import spaces
 # ---------------------------------------------------------------------------
 # SUMO paths
 # ---------------------------------------------------------------------------
-_NET_DIR = pathlib.Path(__file__).resolve().parent.parent / "sumo_net"
+_NET_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "sumo_net" / "single_intersection"
 _SUMOCFG = str(_NET_DIR / "intersection.sumocfg")
 
 # Incoming (towards-center) edges and their two lanes
@@ -51,8 +51,8 @@ GREEN_PHASES = {PHASE_NS_GREEN, PHASE_EW_GREEN}
 YELLOW_DURATION = 5  # seconds of yellow before switching
 
 
-class SumoEnv(gym.Env):
-    """Single-agent traffic signal control environment."""
+class SumoSingleIntersectionEnv(gym.Env):
+    """Single-agent traffic signal control for a single 4-way intersection."""
 
     metadata = {"render_modes": ["human"]}
 

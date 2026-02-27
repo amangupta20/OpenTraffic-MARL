@@ -8,8 +8,8 @@ Logs metrics to Prometheus every step.
 import argparse
 import time
 
-from src.env import SumoEnv
-from src.metrics import start_metrics_server, update
+from src.envs import make_env, ENV_REGISTRY
+from src.utils.metrics import start_metrics_server, update
 
 
 def run_dumb_controller(
@@ -18,12 +18,14 @@ def run_dumb_controller(
     delta_time: int = 5,
     use_gui: bool = False,
     metrics_port: int = 8000,
+    env_name: str = "single_intersection",
 ) -> None:
     """Run the fixed-cycle controller for one episode."""
 
     start_metrics_server(metrics_port)
 
-    env = SumoEnv(
+    env = make_env(
+        env_name,
         use_gui=use_gui,
         max_steps=max_steps,
         delta_time=delta_time,
@@ -79,6 +81,11 @@ def main():
     parser.add_argument(
         "--port", type=int, default=8000, help="Prometheus metrics port"
     )
+    parser.add_argument(
+        "--env", type=str, default="single_intersection",
+        choices=list(ENV_REGISTRY.keys()),
+        help="Environment to use",
+    )
     args = parser.parse_args()
 
     run_dumb_controller(
@@ -86,6 +93,7 @@ def main():
         green_duration=args.green_duration,
         use_gui=args.gui,
         metrics_port=args.port,
+        env_name=args.env,
     )
 
 
