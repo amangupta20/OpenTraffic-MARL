@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <viewsettings>
-    <!-- Viewport settings for 2x2 grid demo (zoomed in to fit 1280x720) -->
     <viewport zoom="250" x="300" y="300"/>
-    
-    <!-- Background and vehicle styling -->
     <scheme name="real world"/>
-    
-    <!-- Delay to make vehicles visible (controlled mostly by CLI --delay, but good to have) -->
     <delay value="200"/>
 </viewsettings>

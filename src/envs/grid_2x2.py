@@ -130,7 +130,12 @@ class SumoGrid2x2Env(gym.Env):
             cmd += ["--seed", str(self.sumo_seed)]
 
         if self.use_gui:
-            cmd += ["--start", "--quit-on-end", "--delay", str(self.gui_delay)]
+            cmd += [
+                "--start", "--quit-on-end",
+                "--delay", str(self.gui_delay),
+                "--window-size", "1280,720",
+                "--window-pos", "0,0",
+            ]
 
         self._sumo.start(cmd)
 
