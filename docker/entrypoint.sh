@@ -39,6 +39,7 @@ case "$MODE" in
     sleep 1
 
     echo "[entrypoint] noVNC available at http://localhost:6080"
+    export SUMO_GUI_ARGS="--window-size 1280,720 --window-pos 0,0"
     exec python3 -m src.agents.ppo --demo --port 8000 "$@"
     ;;
   wandb-login)
@@ -59,6 +60,7 @@ case "$MODE" in
     sleep 1
 
     echo "[entrypoint] noVNC available at http://localhost:6080"
+    export SUMO_GUI_ARGS="--window-size 1280,720 --window-pos 0,0"
     exec python3 -m src.agents.independent_ppo --demo --port 8000 "$@"
     ;;
   grid-eval)
