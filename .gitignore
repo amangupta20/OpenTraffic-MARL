@@ -13,11 +13,14 @@ venv/
 tripinfo.xml
 
 # Models
-models/*.zip
+models/
 
 # TensorBoard
 tb_logs/
 results/
+
+# W&B
+wandb/
 
 # IDE
 .idea/
