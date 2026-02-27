@@ -307,32 +307,104 @@ traffic_throughput        # Vehicles arrived (completed trip) per step
 
 ## 7. Infrastructure
 
-### 7.1 Dual Backend Architecture
+### 7.1 Reproducibility Model
+
+All experiments execute inside Docker containers, eliminating host-specific dependencies
+(Python version, SUMO build, library versions). The only requirement on the host is Docker.
 
 ```mermaid
-graph LR
-    subgraph Training
-        A[SumoEnv use_gui=False] --> B[libsumo]
-        B --> C[In-process SUMO]
+graph TB
+    subgraph "Host Machine (any OS)"
+        M[Makefile] --> DC[docker compose run --rm]
+        DC --> C
+        subgraph "Container (Ubuntu 22.04)"
+            C[entrypoint.sh] --> |MODE=train| T[src.agents.ppo --train]
+            C --> |MODE=evaluate| E[src.agents.ppo --evaluate]
+            C --> |MODE=compare| CP[src.evaluation.compare]
+            C --> |MODE=dumb| D[src.baselines.static_timer]
+            C --> |MODE=demo| DM[sumo-gui + noVNC]
+            T --> SUMO[SUMO 1.25 + libsumo]
+            E --> SUMO
+            CP --> SUMO
+            D --> SUMO
+            DM --> SUMO
+        end
+        V1[./models/] <-.->|volume mount| C
+        V2[./tb_logs/] <-.->|volume mount| C
+        V3[./results/] <-.->|volume mount| C
     end
-    subgraph Evaluation / Demo
-        D[SumoEnv use_gui=True] --> E[traci]
-        E --> F[sumo-gui subprocess]
-        F --> G[Xvfb + x11vnc + noVNC]
-    end
+    T -.->|WANDB_API_KEY| W[W&B Cloud]
 ```
 
-### 7.2 Docker Services
+**Isolation guarantees:**
+- SUMO version is pinned in the Dockerfile (`ppa:sumo/stable`)
+- Python packages are pinned via `requirements.txt`
+- The container is stateless — all persistent data lives on the host via volume mounts
+- `docker compose run --rm` creates a fresh container for each experiment
 
-| Container | Image | Mode | Ports |
-|-----------|-------|------|:-----:|
-| `traffic-agent` | Local build | `dumb` / `train` / `evaluate` | 8000 |
-| `traffic-demo` | Local build | `demo` (noVNC) | 6080, 8001 |
-| `prometheus` | `prom/prometheus` | Scraping | 9010 |
-| `grafana` | `grafana/grafana` | Dashboard | 3000 |
-| `tensorboard` | Local build | Training curves | 6006 |
+### 7.2 Execution Model
 
-### 7.3 File Structure
+Every experiment command maps to a Docker Compose service invocation:
+
+```bash
+make train ARGS="--run-name baseline --timesteps 100000"
+# ↓ translates to:
+docker compose run --rm -e MODE=train agent --run-name baseline --timesteps 100000
+```
+
+| Make Target | MODE | Container Entry Point | Persistent Output |
+|------------|:----:|----------------------|-------------------|
+| `make train` | `train` | `src.agents.ppo --train` | `models/`, `tb_logs/` |
+| `make eval` | `evaluate` | `src.agents.ppo --evaluate` | — |
+| `make dumb` | `dumb` | `src.baselines.static_timer` | — |
+| `make compare` | `compare` | `src.evaluation.compare` | `results/` |
+| `make demo` | `demo` | `src.agents.ppo --demo` + noVNC | — |
+
+### 7.3 Dual SUMO Backend
+
+Inside the container, the environment dynamically selects the SUMO interface:
+
+| Mode | API | Binary | Purpose |
+|------|-----|--------|---------|
+| Training / Evaluation / Compare | `libsumo` | `sumo` (in-process) | Maximum throughput — no IPC overhead |
+| Demo | `traci` | `sumo-gui` (subprocess) | Visual rendering via Xvfb → x11vnc → noVNC |
+
+### 7.4 Persistent Volume Mounts
+
+All experiment outputs survive container teardown via host-mounted directories:
+
+| Host Path | Container Path | Content |
+|-----------|:--------------|---------|
+| `./models/` | `/app/models/` | Saved model weights (`.zip`) |
+| `./tb_logs/` | `/app/tb_logs/` | TensorBoard event files |
+| `./results/` | `/app/results/` | Comparison CSVs and plots |
+
+### 7.5 W&B Credential Management
+
+The W&B API key is passed to the container via the `WANDB_API_KEY` environment variable:
+
+```bash
+export WANDB_API_KEY=<your_key>    # set once per shell session
+make train ARGS="--run-name ..."   # key is forwarded into the container
+```
+
+This is read by `docker-compose.yml`:
+```yaml
+environment:
+  - WANDB_API_KEY=${WANDB_API_KEY:-}
+```
+
+### 7.6 Docker Services
+
+| Service | Image | Ports | Profile |
+|---------|-------|:-----:|:-------:|
+| `agent` | Local build (Ubuntu 22.04 + SUMO + Python) | 8000 | default |
+| `demo` | Local build | 6080, 8001 | `demo` |
+| `prometheus` | `prom/prometheus:latest` | 9010 | default |
+| `grafana` | `grafana/grafana:latest` | 3000 | default |
+| `tensorboard` | `tensorflow/tensorflow:latest` | 6006 | `monitoring` |
+
+### 7.7 File Structure
 
 ```
 marl/
@@ -362,10 +434,11 @@ marl/
 ├── grafana/
 │   ├── provisioning/                      # Auto-provisioned datasource
 │   └── dashboards/                        # Pre-built traffic dashboard JSON
-├── Dockerfile
-├── docker-compose.yml
-├── Makefile
+├── Dockerfile                             # Ubuntu 22.04 + SUMO + Python deps
+├── docker-compose.yml                     # Service definitions + volume mounts
+├── Makefile                               # Docker-first CLI interface
 ├── requirements.txt
 ├── TECHNICAL.md                           # This document
 └── README.md                              # Quick start guide
 ```
+
