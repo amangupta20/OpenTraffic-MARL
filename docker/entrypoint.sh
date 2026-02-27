@@ -35,7 +35,7 @@ case "$MODE" in
     sleep 1
 
     # Start noVNC (websockify)
-    /usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+    websockify --web=/usr/share/novnc 6080 localhost:5900 &
     sleep 1
 
     echo "[entrypoint] noVNC available at http://localhost:6080"

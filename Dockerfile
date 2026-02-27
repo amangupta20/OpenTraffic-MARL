@@ -2,6 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SUMO_HOME=/usr/share/sumo
+ENV PYTHONPATH=/app:${SUMO_HOME}/tools
 
 # Install system deps + SUMO
 RUN apt-get update && apt-get install -y --no-install-recommends \
