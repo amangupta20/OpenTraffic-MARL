@@ -1,6 +1,7 @@
 # MARL Traffic Control
 
 A reproducible Multi-Agent Reinforcement Learning framework for urban traffic signal control.
+**Docker-first** — all experiments run in containers for complete reproducibility.
 
 ## Project Structure
 
@@ -21,103 +22,48 @@ marl/
 ├── sumo_net/
 │   └── single_intersection/               # SUMO network files
 ├── docker-compose.yml
+├── Dockerfile
 ├── Makefile
 ├── TECHNICAL.md                           # Full technical spec
 └── README.md
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  docker-compose                      │
-│                                                      │
-│  ┌──────────────┐  scrape   ┌────────────┐          │
-│  │ traffic-agent │◄─────────│ prometheus │          │
-│  │  (SUMO+PPO)  │  :8000   │   :9090    │          │
-│  └──────────────┘           └─────┬──────┘          │
-│                                   │                  │
-│  ┌──────────────┐           ┌─────▼──────┐          │
-│  │ traffic-demo │           │  grafana   │          │
-│  │ (noVNC+GUI)  │           │   :3000    │          │
-│  │    :6080     │           └────────────┘          │
-│  └──────────────┘                                    │
-│                             ┌────────────┐          │
-│                             │ tensorboard│          │
-│                             │   :6006    │          │
-│                             └────────────┘          │
-└─────────────────────────────────────────────────────┘
-```
-
 ## Quick Start
 
 ```bash
-# Build and start all services
-docker compose up --build
-
-# Or use Make
+# Build the container (once)
 make build
-make up
-```
 
-## Services
+# Train PPO agent (100K steps by default)
+make train ARGS="--run-name baseline --timesteps 100000"
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Grafana | http://localhost:3000 | Metrics dashboard (admin/admin) |
-| Prometheus | http://localhost:9010 | Metrics store |
-| TensorBoard | http://localhost:6006 | Training curves |
-| noVNC Demo | http://localhost:6080 | Live SUMO simulation |
-| Metrics | http://localhost:8000 | Prometheus scrape endpoint |
-
-## Local Development
-
-```bash
-# One-time setup: create venv with system-site-packages (needed for libsumo)
-make venv
+# Evaluate trained model
+make eval
 
 # Run static-timer baseline
-make local-dumb
+make dumb
 
-# Train PPO agent (default: single_intersection env)
-make local-train
+# Compare static-timer vs PPO (generates plots + logs to W&B)
+make compare
 
-# Evaluate saved model
-make local-eval
-
-# Visual demo with sumo-gui
-make local-demo
-
-# Run offline comparison (static-timer vs PPO) — saves plots to results/
-make local-compare
-
-# Launch TensorBoard
-make local-tb
-
-# Select a different environment (when available)
-make local-train ARGS="--env single_intersection"
+# Visual demo (sumo-gui at http://localhost:6080)
+make demo
 ```
 
 ## Experiment Tracking (Weights & Biases)
 
 ```bash
-# One-time: login with your free W&B account
-make wandb-login
+# Set your W&B API key (get it from https://wandb.ai/authorize)
+export WANDB_API_KEY=your_key_here
 
-# Train with a descriptive run name and notes (both optional)
-make local-train ARGS="--run-name baseline --notes 'Fixed-cycle 40s green baseline'"
-make local-train ARGS="--run-name starving-lane-fix --notes 'Added wait-time penalty to eliminate starvation'"
+# Train with a descriptive run name and notes
+make train ARGS="--run-name baseline --notes 'Original queue-based reward' --timesteps 100000"
 
-# Control how long to train (default: 100,000 steps)
-make local-train ARGS="--run-name long-run --timesteps 1000000"
+# Auto-run comparison after training
+make train ARGS="--run-name baseline --timesteps 100000 --compare-static"
 
-# Combine all flags
-make local-train ARGS="--run-name baseline-1M --timesteps 1000000 --notes 'Full 1M step baseline run'"
-
-# Auto-run static-timer comparison after training (creates a separate W&B eval run)
-make local-train ARGS="--run-name baseline --timesteps 100000 --compare-static"
-# → Training run: 'baseline'
-# → Eval run:     'baseline_vs_static' (with comparison plot uploaded)
+# Select a different environment (when available)
+make train ARGS="--env single_intersection --run-name grid-test"
 ```
 
 Every training run automatically captures:
@@ -126,7 +72,32 @@ Every training run automatically captures:
 - Git commit hash + exact CLI command used
 - Model weights versioned as a W&B artifact (`ppo_traffic_model:v0`, `v1`, ...)
 
-Comparison evaluations (`make local-compare`) upload the static-timer vs PPO plot and summary stats to W&B automatically.
+## Monitoring
+
+```bash
+# Start Prometheus + Grafana + TensorBoard
+make dashboard
+
+# TensorBoard only
+make tb
+```
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Grafana | http://localhost:3000 | Metrics dashboard (admin/admin) |
+| Prometheus | http://localhost:9010 | Metrics store |
+| TensorBoard | http://localhost:6006 | Training curves |
+| noVNC Demo | http://localhost:6080 | Live SUMO simulation |
+
+## Lifecycle
+
+```bash
+# Stop all services
+make down
+
+# Clean persistent data (models, logs, results)
+make clean
+```
 
 ## Metrics Exposed
 

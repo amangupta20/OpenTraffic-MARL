@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entrypoint for the traffic-agent container.
+# Entrypoint for the traffic container.
 # MODE env var selects the behavior.
 set -e
 
@@ -8,15 +8,19 @@ MODE="${MODE:-dumb}"
 case "$MODE" in
   dumb)
     echo "[entrypoint] Running static-timer controller"
-    exec python -m src.baselines.static_timer --port 8000 "$@"
+    exec python3 -m src.baselines.static_timer --port 8000 "$@"
     ;;
   train)
     echo "[entrypoint] Training PPO agent"
-    exec python -m src.agents.ppo --train --port 8000 "$@"
+    exec python3 -m src.agents.ppo --train --port 8000 "$@"
     ;;
   evaluate)
     echo "[entrypoint] Evaluating saved PPO model"
-    exec python -m src.agents.ppo --evaluate --port 8000 "$@"
+    exec python3 -m src.agents.ppo --evaluate --port 8000 "$@"
+    ;;
+  compare)
+    echo "[entrypoint] Running offline comparison (static vs PPO)"
+    exec python3 -m src.evaluation.compare "$@"
     ;;
   demo)
     echo "[entrypoint] Starting visual demo (sumo-gui via noVNC)"
@@ -35,10 +39,14 @@ case "$MODE" in
     sleep 1
 
     echo "[entrypoint] noVNC available at http://localhost:6080"
-    exec python -m src.agents.ppo --demo --port 8000 "$@"
+    exec python3 -m src.agents.ppo --demo --port 8000 "$@"
+    ;;
+  wandb-login)
+    echo "[entrypoint] Logging into Weights & Biases"
+    exec python3 -m wandb login "$@"
     ;;
   *)
-    echo "[entrypoint] Unknown MODE=$MODE (use: dumb|train|evaluate|demo)"
+    echo "[entrypoint] Unknown MODE=$MODE (use: dumb|train|evaluate|compare|demo|wandb-login)"
     exit 1
     ;;
 esac

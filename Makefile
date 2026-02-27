@@ -1,63 +1,59 @@
-.PHONY: build up down train evaluate demo logs clean local-dumb local-train local-eval local-demo local-compare local-tb wandb-login
+.PHONY: build train eval dumb compare demo tb dashboard down logs clean wandb-login
 
-# Build Docker images
+# ═══════════════════════════════════════════════════════════════════
+# Docker-first workflow (reproducible, host-independent)
+# ═══════════════════════════════════════════════════════════════════
+
+# Build the container image
 build:
 	docker compose build
 
-# Start core stack (agent + prometheus + grafana)
-up:
-	docker compose up -d
-
-# Start with training profile (includes TensorBoard)
+# Train PPO agent
+#   make train ARGS="--run-name baseline --timesteps 100000 --compare-static"
 train:
-	MODE=train docker compose --profile train up -d
+	docker compose run --rm -e MODE=train agent $(ARGS)
 
-# Start visual demo
+# Evaluate saved model (headless)
+eval:
+	docker compose run --rm -e MODE=evaluate agent $(ARGS)
+
+# Run static-timer baseline
+dumb:
+	docker compose run --rm -e MODE=dumb agent $(ARGS)
+
+# Run offline comparison (static-timer vs PPO)
+compare:
+	docker compose run --rm -e MODE=compare agent $(ARGS)
+
+# Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:
-	docker compose --profile demo up -d
+	docker compose --profile demo up demo
 
-# Evaluate saved model
-evaluate:
-	MODE=evaluate docker compose up -d traffic-agent
+# Login to Weights & Biases (interactive — saves key to host)
+wandb-login:
+	docker compose run --rm -e MODE=wandb-login -it agent
+
+# Start monitoring stack (Prometheus + Grafana + TensorBoard)
+dashboard:
+	docker compose --profile monitoring up -d prometheus grafana tensorboard
+	@echo ""
+	@echo "  Grafana:     http://localhost:3000  (admin/admin)"
+	@echo "  Prometheus:  http://localhost:9010"
+	@echo "  TensorBoard: http://localhost:6006"
+	@echo ""
+
+# TensorBoard only
+tb:
+	docker compose --profile monitoring up tensorboard
 
 # Stop all services
 down:
-	docker compose --profile demo --profile train down
+	docker compose --profile demo --profile monitoring down
 
 # Tail logs
 logs:
 	docker compose logs -f
 
-# Clean models and TB logs
+# Clean persistent data
 clean:
-	rm -rf models/*.zip tb_logs/*
-
-# --- Local dev setup ---
-SUMO_ENV = SUMO_HOME=/usr/share/sumo PYTHONPATH=.:/usr/share/sumo/tools CUDA_VISIBLE_DEVICES=
-PY = $(SUMO_ENV) .venv/bin/python
-
-venv:
-	uv venv --system-site-packages --python /usr/bin/python3 .venv
-	uv pip install gymnasium 'stable-baselines3[extra]' prometheus-client tensorboard wandb numpy
-
-# --- Local dev commands (no Docker) ---
-wandb-login:
-	$(PY) -m wandb login
-
-local-dumb:
-	$(PY) -m src.baselines.static_timer $(ARGS)
-
-local-train:
-	$(PY) -m src.agents.ppo --train $(ARGS)
-
-local-eval:
-	$(PY) -m src.agents.ppo --evaluate $(ARGS)
-
-local-demo:
-	$(PY) -m src.agents.ppo --demo $(ARGS)
-
-local-compare:
-	$(PY) -m src.evaluation.compare $(ARGS)
-
-local-tb:
-	$(PY) -m tensorboard.main --logdir=tb_logs --host=0.0.0.0 --port=6006
+	rm -rf models/ tb_logs/ results/

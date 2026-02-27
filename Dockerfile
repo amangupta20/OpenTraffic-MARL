@@ -26,8 +26,8 @@ COPY sumo_net/ sumo_net/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create dirs for model + TB logs
-RUN mkdir -p models tb_logs
+# Create dirs for outputs (volumes will override these)
+RUN mkdir -p models tb_logs results
 
 # Prometheus metrics port
 EXPOSE 8000
