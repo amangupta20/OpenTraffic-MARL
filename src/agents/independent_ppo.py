@@ -84,6 +84,7 @@ def run_grid_ppo(
     delta_time: int = 5,
     switch_penalty: float = 2.0,
     metrics_port: int = 8000,
+    use_gui: bool = False,
 ) -> list[dict]:
     """Run cloned PPO agents (one per junction) on the grid."""
     model_path = MODELS_DIR / "ppo_traffic.zip"
@@ -95,7 +96,7 @@ def run_grid_ppo(
     start_metrics_server(metrics_port)
     model = PPO.load(str(model_path), device="cpu")
 
-    env = make_env(env_name, use_gui=False, max_steps=max_steps,
+    env = make_env(env_name, use_gui=use_gui, max_steps=max_steps,
                    delta_time=delta_time, switch_penalty=switch_penalty)
     obs, info = env.reset()
     records: list[dict] = [_record(info, 0)]
@@ -103,7 +104,8 @@ def run_grid_ppo(
     terminated = False
     step = 0
 
-    print(f"[grid-ppo] Running {len(TLS_IDS)} cloned PPO agents (zero-shot)")
+    mode = "grid-demo" if use_gui else "grid-ppo"
+    print(f"[{mode}] Running {len(TLS_IDS)} cloned PPO agents (zero-shot)")
 
     while not terminated:
         # Each agent independently predicts from its local observation
@@ -119,13 +121,13 @@ def run_grid_ppo(
 
         if step % 20 == 0:
             print(
-                f"[grid-ppo] step={step:4d}  queue={info['queue_length']:.0f}  "
+                f"[{mode}] step={step:4d}  queue={info['queue_length']:.0f}  "
                 f"wait={info['wait_time_total']:.0f}  reward={reward:.1f}"
             )
 
     env.close()
     total_reward = sum(r["reward"] for r in records)
-    print(f"[grid-ppo] Done. Total reward: {total_reward:.1f}")
+    print(f"[{mode}] Done. Total reward: {total_reward:.1f}")
     return records
 
 
@@ -289,6 +291,7 @@ def main():
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--evaluate", action="store_true", help="Run cloned PPO agents")
+    group.add_argument("--demo", action="store_true", help="Visual demo (sumo-gui)")
     group.add_argument("--static", action="store_true", help="Run static-timer baseline")
     group.add_argument("--compare", action="store_true", help="Compare static vs PPO")
 
@@ -305,6 +308,12 @@ def main():
             env_name=args.env, max_steps=args.max_steps,
             delta_time=args.delta_time, switch_penalty=args.switch_penalty,
             metrics_port=args.port,
+        )
+    elif args.demo:
+        run_grid_ppo(
+            env_name=args.env, max_steps=args.max_steps,
+            delta_time=args.delta_time, switch_penalty=args.switch_penalty,
+            metrics_port=args.port, use_gui=True,
         )
     elif args.static:
         run_grid_static(
