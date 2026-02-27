@@ -96,6 +96,12 @@ make wandb-login
 # Train with a descriptive run name and notes (both optional)
 make local-train ARGS="--run-name baseline --notes 'Fixed-cycle 40s green baseline'"
 make local-train ARGS="--run-name starving-lane-fix --notes 'Added wait-time penalty to eliminate starvation'"
+
+# Control how long to train (default: 100,000 steps)
+make local-train ARGS="--run-name long-run --timesteps 1000000"
+
+# Combine all flags
+make local-train ARGS="--run-name baseline-1M --timesteps 1000000 --notes 'Full 1M step baseline run'"
 ```
 
 Every training run automatically captures:
