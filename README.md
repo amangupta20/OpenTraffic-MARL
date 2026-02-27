@@ -102,6 +102,11 @@ make local-train ARGS="--run-name long-run --timesteps 1000000"
 
 # Combine all flags
 make local-train ARGS="--run-name baseline-1M --timesteps 1000000 --notes 'Full 1M step baseline run'"
+
+# Auto-run static-timer comparison after training (creates a separate W&B eval run)
+make local-train ARGS="--run-name baseline --timesteps 100000 --compare-static"
+# → Training run: 'baseline'
+# → Eval run:     'baseline_vs_static' (with comparison plot uploaded)
 ```
 
 Every training run automatically captures:
@@ -110,7 +115,7 @@ Every training run automatically captures:
 - Git commit hash + exact CLI command used
 - Model weights versioned as a W&B artifact (`ppo_traffic_model:v0`, `v1`, ...)
 
-Comparison evaluations (`make local-compare`) upload the dumb vs PPO plot and summary stats to W&B automatically.
+Comparison evaluations (`make local-compare`) upload the static-timer vs PPO plot and summary stats to W&B automatically.
 
 ## Metrics Exposed
 

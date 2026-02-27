@@ -25,6 +25,7 @@ from wandb.integration.sb3 import WandbCallback
 
 from src.env import SumoEnv
 from src.metrics import start_metrics_server, update
+from src.compare import run_comparison
 
 MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent / "models"
 TB_LOG_DIR = pathlib.Path(__file__).resolve().parent.parent / "tb_logs"
@@ -259,6 +260,10 @@ def main():
     parser.add_argument(
         "--notes", type=str, default=None, help="Detailed notes for the W&B run (e.g., 'fixing starvation')"
     )
+    parser.add_argument(
+        "--compare-static", action="store_true",
+        help="Run static-timer vs PPO comparison after training completes"
+    )
     args = parser.parse_args()
 
     if args.train:
@@ -272,6 +277,14 @@ def main():
             run_name=args.run_name,
             notes=args.notes,
         )
+        if args.compare_static:
+            eval_name = f"{args.run_name or 'ppo'}_vs_static"
+            print(f"\n[smart] Running post-training comparison as '{eval_name}'...")
+            run_comparison(
+                delta_time=5,
+                switch_penalty=args.switch_penalty,
+                wandb_run_name=eval_name,
+            )
     elif args.evaluate:
         evaluate(
             switch_penalty=args.switch_penalty,

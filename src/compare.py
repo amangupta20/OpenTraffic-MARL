@@ -199,39 +199,40 @@ def generate_plots(
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(description="Compare Dumb vs PPO controllers")
-    parser.add_argument("--max-steps", type=int, default=3600, help="Simulation seconds")
-    parser.add_argument("--delta-time", type=int, default=5, help="Seconds between decisions")
-    parser.add_argument("--switch-penalty", type=float, default=2.0, help="Phase switch penalty")
-    args = parser.parse_args()
+def run_comparison(
+    max_steps: int = 3600,
+    delta_time: int = 5,
+    switch_penalty: float = 2.0,
+    wandb_run_name: str = "offline-comparison",
+) -> None:
+    """Run full dumb-vs-PPO comparison, save CSVs/plots, and log to W&B."""
 
     print("=" * 60)
-    print("  OFFLINE COMPARISON: Dumb vs PPO")
+    print("  OFFLINE COMPARISON: Baseline vs PPO")
     print("=" * 60)
 
-    print("\n[1/4] Running dumb controller...")
-    dumb_records = run_dumb(args.max_steps, args.delta_time, args.switch_penalty)
+    print("\n[1/5] Running baseline (static-timer) controller...")
+    dumb_records = run_dumb(max_steps, delta_time, switch_penalty)
 
-    print("\n[2/4] Running PPO controller...")
-    ppo_records = run_ppo(args.max_steps, args.delta_time, args.switch_penalty)
+    print("\n[2/5] Running PPO controller...")
+    ppo_records = run_ppo(max_steps, delta_time, switch_penalty)
 
-    print("\n[3/4] Saving CSV files...")
-    save_csv(dumb_records, RESULTS_DIR / "dumb_metrics.csv")
+    print("\n[3/5] Saving CSV files...")
+    save_csv(dumb_records, RESULTS_DIR / "baseline_metrics.csv")
     save_csv(ppo_records, RESULTS_DIR / "ppo_metrics.csv")
 
-    print("\n[4/4] Generating comparison plots...")
+    print("\n[4/5] Generating comparison plots...")
     generate_plots(dumb_records, ppo_records, RESULTS_DIR / "comparison.png")
 
     print("\n[5/5] Logging evaluation to W&B...")
     run = wandb.init(
         project="marl-traffic",
         job_type="evaluation",
-        name="offline-comparison",
+        name=wandb_run_name,
         config={
-            "max_steps": args.max_steps,
-            "delta_time": args.delta_time,
-            "switch_penalty": args.switch_penalty,
+            "max_steps": max_steps,
+            "delta_time": delta_time,
+            "switch_penalty": switch_penalty,
         },
     )
 
@@ -242,9 +243,9 @@ def main():
     
     # Log summary metrics
     wandb.log({
-        "eval/dumb_total_reward": dumb_reward,
+        "eval/baseline_total_reward": dumb_reward,
         "eval/ppo_total_reward": ppo_reward,
-        "eval/dumb_avg_queue": dumb_q,
+        "eval/baseline_avg_queue": dumb_q,
         "eval/ppo_avg_queue": ppo_q,
         "eval/reward_improvement_pct": (1 - ppo_reward / dumb_reward) * 100 if dumb_reward != 0 else 0,
     })
@@ -256,6 +257,22 @@ def main():
     print("\n" + "=" * 60)
     print("  DONE! Results in: results/ and W&B")
     print("=" * 60)
+
+
+# ── CLI ──────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Compare Baseline vs PPO controllers")
+    parser.add_argument("--max-steps", type=int, default=3600, help="Simulation seconds")
+    parser.add_argument("--delta-time", type=int, default=5, help="Seconds between decisions")
+    parser.add_argument("--switch-penalty", type=float, default=2.0, help="Phase switch penalty")
+    args = parser.parse_args()
+
+    run_comparison(
+        max_steps=args.max_steps,
+        delta_time=args.delta_time,
+        switch_penalty=args.switch_penalty,
+    )
 
 
 if __name__ == "__main__":
