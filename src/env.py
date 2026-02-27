@@ -129,16 +129,19 @@ class SumoEnv(gym.Env):
             self._sumo.close()
         except Exception:
             pass
-        # Kill any orphaned sumo/sumo-gui processes
-        for name in ("sumo", "sumo-gui"):
-            try:
-                subprocess.run(
-                    ["pkill", "-f", name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception:
-                pass
+        # Only kill orphaned processes in GUI mode (traci spawns external sumo-gui).
+        # In headless mode (libsumo) SUMO runs in-process — pkill would kill
+        # other parallel SubprocVecEnv workers.
+        if self.use_gui:
+            for name in ("sumo", "sumo-gui"):
+                try:
+                    subprocess.run(
+                        ["pkill", "-f", name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Gymnasium API
