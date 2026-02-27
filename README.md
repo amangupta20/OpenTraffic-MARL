@@ -87,6 +87,25 @@ make local-compare
 make local-tb
 ```
 
+## Experiment Tracking (Weights & Biases)
+
+```bash
+# One-time: login with your free W&B account
+make wandb-login
+
+# Train with a descriptive run name and notes (both optional)
+make local-train ARGS="--run-name baseline --notes 'Fixed-cycle 40s green baseline'"
+make local-train ARGS="--run-name starving-lane-fix --notes 'Added wait-time penalty to eliminate starvation'"
+```
+
+Every training run automatically captures:
+- All hyperparameters (lr, gamma, n_steps, etc.)
+- Training curves synced from TensorBoard
+- Git commit hash + exact CLI command used
+- Model weights versioned as a W&B artifact (`ppo_traffic_model:v0`, `v1`, ...)
+
+Comparison evaluations (`make local-compare`) upload the dumb vs PPO plot and summary stats to W&B automatically.
+
 ## Metrics Exposed
 
 - `traffic_queue_length` — live count of waiting cars

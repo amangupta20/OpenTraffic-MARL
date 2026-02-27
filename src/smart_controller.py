@@ -15,10 +15,13 @@ import pathlib
 import time
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.utils import set_random_seed
+
+import wandb
+from wandb.integration.sb3 import WandbCallback
 
 from src.env import SumoEnv
 from src.metrics import start_metrics_server, update
@@ -50,13 +53,40 @@ def train(
     metrics_port: int = 8000,
     learning_rate: float = 3e-4,
     device: str = "auto",
-    num_envs: int = 8,
+    num_envs: int = 4,
+    run_name: str | None = None,
+    notes: str | None = None,
 ) -> None:
     """Train PPO agent with libsumo backend (supports parallel envs)."""
 
     start_metrics_server(metrics_port)
     MODELS_DIR.mkdir(exist_ok=True)
     TB_LOG_DIR.mkdir(exist_ok=True)
+
+    # Initialize weights & biases (W&B)
+    run_config = {
+        "learning_rate": learning_rate,
+        "total_timesteps": total_timesteps,
+        "delta_time": delta_time,
+        "switch_penalty": switch_penalty,
+        "num_envs": num_envs,
+        "n_steps": 512,
+        "batch_size": 128,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+    }
+    
+    run = wandb.init(
+        project="marl-traffic",
+        name=run_name,
+        notes=notes,
+        config=run_config,
+        sync_tensorboard=True,  # Auto-upload TB metrics
+        monitor_gym=True,
+        save_code=True,         # Log code state
+    )
 
     # Factory for creating env instances
     def make_env(rank: int, seed: int = 0):
@@ -96,10 +126,20 @@ def train(
 
     print(f"[smart] Using device: {model.device} with {num_envs} parallel environments")
 
+    # Callbacks: Prometheus + W&B
+    callbacks = CallbackList([
+        MetricsCallback(),
+        WandbCallback(
+            gradient_save_freq=100,
+            model_save_path=f"models/{run.id}",
+            verbose=2,
+        )
+    ])
+
     print(f"[smart] Training PPO for {total_timesteps} timesteps...")
     model.learn(
         total_timesteps=total_timesteps,
-        callback=MetricsCallback(),
+        callback=callbacks,
         tb_log_name="ppo_traffic",
     )
 
@@ -107,7 +147,17 @@ def train(
     model.save(str(save_path))
     print(f"[smart] Model saved to {save_path}.zip")
 
+    # Version the model weights artifact in W&B
+    artifact = wandb.Artifact(
+        name="ppo_traffic_model",
+        type="model",
+        description=f"PPO traffic controller weights (run: {run.name})",
+    )
+    artifact.add_file(str(save_path) + ".zip")
+    run.log_artifact(artifact)
+
     env.close()
+    wandb.finish()
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +253,12 @@ def main():
     parser.add_argument(
         "--num-envs", type=int, default=4, help="Number of parallel envs (CPU cores)"
     )
+    parser.add_argument(
+        "--run-name", type=str, default=None, help="Custom name for the W&B run (e.g., 'baseline')"
+    )
+    parser.add_argument(
+        "--notes", type=str, default=None, help="Detailed notes for the W&B run (e.g., 'fixing starvation')"
+    )
     args = parser.parse_args()
 
     if args.train:
@@ -213,6 +269,8 @@ def main():
             learning_rate=args.lr,
             device=args.device,
             num_envs=args.num_envs,
+            run_name=args.run_name,
+            notes=args.notes,
         )
     elif args.evaluate:
         evaluate(

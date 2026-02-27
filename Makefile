@@ -1,4 +1,4 @@
-.PHONY: build up down train evaluate demo logs clean local-dumb local-train local-eval local-demo local-compare local-tb
+.PHONY: build up down train evaluate demo logs clean local-dumb local-train local-eval local-demo local-compare local-tb wandb-login
 
 # Build Docker images
 build:
@@ -38,20 +38,23 @@ PY = $(SUMO_ENV) .venv/bin/python
 
 venv:
 	uv venv --system-site-packages --python /usr/bin/python3 .venv
-	uv pip install gymnasium 'stable-baselines3[extra]' prometheus-client tensorboard numpy
+	uv pip install gymnasium 'stable-baselines3[extra]' prometheus-client tensorboard wandb numpy
 
 # --- Local dev commands (no Docker) ---
+wandb-login:
+	$(PY) -m wandb login
+
 local-dumb:
-	$(PY) -m src.dumb_controller
+	$(PY) -m src.dumb_controller $(ARGS)
 
 local-train:
-	$(PY) -m src.smart_controller --train
+	$(PY) -m src.smart_controller --train $(ARGS)
 
 local-eval:
-	$(PY) -m src.smart_controller --evaluate
+	$(PY) -m src.smart_controller --evaluate $(ARGS)
 
 local-demo:
-	$(PY) -m src.smart_controller --demo
+	$(PY) -m src.smart_controller --demo $(ARGS)
 
 local-compare:
 	$(PY) -m src.compare

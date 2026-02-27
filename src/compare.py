@@ -23,6 +23,7 @@ matplotlib.use("Agg")  # headless backend — no display needed
 import matplotlib.pyplot as plt
 import numpy as np
 
+import wandb
 from stable_baselines3 import PPO
 
 from src.env import SumoEnv
@@ -222,8 +223,38 @@ def main():
     print("\n[4/4] Generating comparison plots...")
     generate_plots(dumb_records, ppo_records, RESULTS_DIR / "comparison.png")
 
+    print("\n[5/5] Logging evaluation to W&B...")
+    run = wandb.init(
+        project="marl-traffic",
+        job_type="evaluation",
+        name="offline-comparison",
+        config={
+            "max_steps": args.max_steps,
+            "delta_time": args.delta_time,
+            "switch_penalty": args.switch_penalty,
+        },
+    )
+
+    dumb_reward = sum(r["reward"] for r in dumb_records)
+    ppo_reward = sum(r["reward"] for r in ppo_records)
+    dumb_q = np.mean([r["queue_length"] for r in dumb_records])
+    ppo_q = np.mean([r["queue_length"] for r in ppo_records])
+    
+    # Log summary metrics
+    wandb.log({
+        "eval/dumb_total_reward": dumb_reward,
+        "eval/ppo_total_reward": ppo_reward,
+        "eval/dumb_avg_queue": dumb_q,
+        "eval/ppo_avg_queue": ppo_q,
+        "eval/reward_improvement_pct": (1 - ppo_reward / dumb_reward) * 100 if dumb_reward != 0 else 0,
+    })
+
+    # Upload plot as media
+    wandb.log({"eval/comparison_plot": wandb.Image(str(RESULTS_DIR / "comparison.png"))})
+    wandb.finish()
+
     print("\n" + "=" * 60)
-    print("  DONE! Results in: results/")
+    print("  DONE! Results in: results/ and W&B")
     print("=" * 60)
 
 
