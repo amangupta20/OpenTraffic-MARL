@@ -64,8 +64,8 @@ make grid-eval
 # Run static-timer baseline on the grid (30s green cycles)
 make grid-static
 
-# Compare static vs cloned PPO (generates comparison plot)
-make grid-compare
+# Compare static vs cloned PPO (generates plot + logs to W&B)
+make grid-compare ARGS="--run-name zero-shot-baseline"
 
 # Visual demo via noVNC (sumo-gui at http://localhost:6080)
 make grid-demo

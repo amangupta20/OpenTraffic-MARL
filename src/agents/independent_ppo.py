@@ -139,12 +139,14 @@ def run_grid_comparison(
     max_steps: int = 3600,
     delta_time: int = 5,
     switch_penalty: float = 2.0,
+    wandb_run_name: str = "grid-comparison",
 ) -> None:
-    """Run grid static-timer vs cloned PPO comparison."""
+    """Run grid static-timer vs cloned PPO comparison, log to W&B."""
     import csv
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import wandb
 
     results_dir = MODELS_DIR.parent / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -153,34 +155,65 @@ def run_grid_comparison(
     print("  GRID COMPARISON: Static Timer vs Cloned PPO (4 agents)")
     print("=" * 60)
 
-    print("\n[1/4] Running static-timer baseline on grid...")
+    print("\n[1/5] Running static-timer baseline on grid...")
     static_records = run_grid_static(
         env_name=env_name, max_steps=max_steps,
         delta_time=delta_time, switch_penalty=switch_penalty,
     )
 
-    print("\n[2/4] Running cloned PPO agents on grid...")
+    print("\n[2/5] Running cloned PPO agents on grid...")
     ppo_records = run_grid_ppo(
         env_name=env_name, max_steps=max_steps,
         delta_time=delta_time, switch_penalty=switch_penalty,
         metrics_port=8001,
     )
 
-    print("\n[3/4] Saving CSV files...")
+    print("\n[3/5] Saving CSV files...")
     _save_csv(static_records, results_dir / "grid_static_metrics.csv")
     _save_csv(ppo_records, results_dir / "grid_ppo_metrics.csv")
 
-    print("\n[4/4] Generating comparison plot...")
-    _generate_plot(static_records, ppo_records, results_dir / "grid_comparison.png")
+    print("\n[4/5] Generating comparison plot...")
+    plot_path = results_dir / "grid_comparison.png"
+    _generate_plot(static_records, ppo_records, plot_path)
 
     static_reward = sum(r["reward"] for r in static_records)
     ppo_reward = sum(r["reward"] for r in ppo_records)
+    static_q = np.mean([r["queue_length"] for r in static_records])
+    ppo_q = np.mean([r["queue_length"] for r in ppo_records])
     improvement = (1 - ppo_reward / static_reward) * 100 if static_reward != 0 else 0
+
+    print("\n[5/5] Logging evaluation to W&B...")
+    run = wandb.init(
+        project="marl-traffic",
+        job_type="grid-evaluation",
+        name=wandb_run_name,
+        config={
+            "env": env_name,
+            "max_steps": max_steps,
+            "delta_time": delta_time,
+            "switch_penalty": switch_penalty,
+            "num_agents": 4,
+            "agent_type": "independent_ppo_zero_shot",
+            "baseline": "static_timer_30s",
+        },
+    )
+
+    wandb.log({
+        "grid_eval/static_total_reward": static_reward,
+        "grid_eval/ppo_total_reward": ppo_reward,
+        "grid_eval/static_avg_queue": static_q,
+        "grid_eval/ppo_avg_queue": ppo_q,
+        "grid_eval/reward_improvement_pct": improvement,
+    })
+
+    wandb.log({"grid_eval/comparison_plot": wandb.Image(str(plot_path))})
+    wandb.finish()
 
     print("\n" + "=" * 60)
     print(f"  Static Timer Total Reward:  {static_reward:,.0f}")
     print(f"  Cloned PPO Total Reward:    {ppo_reward:,.0f}")
     print(f"  Improvement:                {improvement:+.1f}%")
+    print("  Results logged to W&B ✓")
     print("=" * 60)
 
 
@@ -300,6 +333,8 @@ def main():
     parser.add_argument("--max-steps", type=int, default=3600, help="Simulation seconds")
     parser.add_argument("--delta-time", type=int, default=5, help="Decision interval")
     parser.add_argument("--switch-penalty", type=float, default=2.0, help="Switch penalty α")
+    parser.add_argument("--run-name", type=str, default="grid-comparison",
+                        help="W&B run name for comparison")
     parser.add_argument("--port", type=int, default=8000, help="Prometheus port")
     args = parser.parse_args()
 
@@ -325,6 +360,7 @@ def main():
         run_grid_comparison(
             env_name=args.env, max_steps=args.max_steps,
             delta_time=args.delta_time, switch_penalty=args.switch_penalty,
+            wandb_run_name=args.run_name,
         )
 
 
