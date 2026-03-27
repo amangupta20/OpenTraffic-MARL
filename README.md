@@ -71,12 +71,12 @@ make grid-compare ARGS="--run-name zero-shot-baseline"
 make grid-demo
 ```
 
-## Stage 3: Bangalore MG Road Corridor
+## Stage 3: Bangalore MG Road Corridor — Independent PPO
 
-Train the hierarchical heterogeneous multi-agent reinforcement learning system on the Bangalore MG Road network with Curriculum Learning (starting from 0.2x scale):
+Train the heterogeneous multi-agent reinforcement learning system on the Bangalore MG Road network with Curriculum Learning (starting from 0.75x scale):
 
 ```bash
-# Train heterogeneous PPO agents on the Bangalore Corridor (starts at 0.2x scale)
+# Train heterogeneous PPO agents on the Bangalore Corridor (starts at 0.75x scale)
 make blr-train ARGS="--run-name bangalore-curriculum --timesteps 500000"
 
 # Run comparison: static timer vs trained PPO → results logged to the SAME W&B run
@@ -93,6 +93,23 @@ Model weights are automatically uploaded as a versioned W&B Artifact (`blr-ppo-m
 Running `make blr-compare` resumes the original training run so the comparison plot and metrics appear on the **same W&B run page**.
 
 
+## Phase 3: CTDE MAPPO Architecture
+
+Train the Centralized Training, Decentralized Execution (CTDE) architecture on the Bangalore corridor. This features a shared global critic and decentralized per-junction actors.
+
+```bash
+# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0)
+make ctde-train ARGS="--run-name ctde-run-1 --timesteps 500000"
+
+# 3-way comparison plot (Static vs IndePPO vs CTDE) — logs to the CTDE W&B run
+make ctde-compare
+
+# Visual demo of CTDE execution (sumo-gui streamed at http://localhost:6080)
+make ctde-demo
+
+# Headless decentralized evaluation (no critic needed)
+make ctde-eval
+```
 ## Experiment Tracking (Weights & Biases)
 
 ```bash
