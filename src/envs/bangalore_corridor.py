@@ -248,8 +248,9 @@ class SumoBangaloreCorridor(gym.Env):
         rewards = {}
         for tls_id in self.tls_ids:
             queue = self._junction_queue(tls_id)
-            penalty = self.switch_penalty if switched[tls_id] else 0.0
-            rewards[tls_id] = -queue - penalty
+            switch_pen = self.switch_penalty if switched[tls_id] else 0.0
+            starve_pen = self._junction_starvation_penalty(tls_id)
+            rewards[tls_id] = -queue - switch_pen - starve_pen
 
         obs = self._get_all_obs()
         terminated = self._step_count >= self.max_steps
@@ -296,6 +297,18 @@ class SumoBangaloreCorridor(gym.Env):
             except Exception:
                 pass
         return total
+
+    def _junction_starvation_penalty(self, tls_id: str) -> float:
+        penalty = 0.0
+        for lane in self.tls_incoming_lanes[tls_id]:
+            try:
+                wait = self._sumo.lane.getWaitingTime(lane)
+                # Quadratic/exponential penalty to severely punish starving a specific lane
+                # Scaling by 100 keeps it from drowning out the queue metric immediately.
+                penalty += (wait / 100.0) ** 2
+            except Exception:
+                pass
+        return penalty
 
     def _get_info(
         self,

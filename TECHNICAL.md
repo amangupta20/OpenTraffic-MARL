@@ -131,17 +131,19 @@ During yellow phases, the agent's action is ignored until the yellow countdown c
 ### 2.3 Reward Function
 
 The agent receives a composite reward signal designed to minimize queue buildup while
-discouraging excessive phase switching (flickering):
+discouraging excessive phase switching (flickering) and severely punishing lane starvation:
 
-$$R_t = -Q_t - \alpha \cdot \mathbb{1}[\text{switched}]$$
+$$R_t = -Q_t - \alpha \cdot \mathbb{1}[\text{switched}] - \sum_{l \in \text{lanes}} \left(\frac{W_{l,t}}{\beta}\right)^2$$
 
 Where:
 
 | Symbol | Definition | Default Value |
 |--------|-----------|:------------:|
-| $Q_t$ | $\sum_{i=1}^{8} q_i(t)$ — total halting vehicles across all 8 incoming lanes | — |
+| $Q_t$ | $\sum_{i} q_i(t)$ — total halting vehicles across all incoming lanes | — |
 | $\alpha$ | Phase switch penalty weight | 2.0 |
 | $\mathbb{1}[\text{switched}]$ | Indicator: 1 if the agent chose action 1 (switch), 0 otherwise | — |
+| $W_{l,t}$ | Total accumulated waiting time on lane $l$ (seconds) | — |
+| $\beta$ | Scaling factor to prevent wait penalty from dominating early queues | 100.0 |
 
 > **Design rationale:** The negative queue length provides a smooth, dense gradient signal.
 > The switch penalty $\alpha$ prevents the agent from oscillating between phases every 5 seconds,
