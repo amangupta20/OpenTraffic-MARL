@@ -44,13 +44,13 @@ MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
 GAMMA        = 0.99
 GAE_LAMBDA   = 0.95
 CLIP_EPS     = 0.2
-ENTROPY_COEF = 0.01
+ENTROPY_COEF = 0.05
 VALUE_COEF   = 0.5
 LR_ACTOR     = 3e-4
 LR_CRITIC    = 3e-4
-N_STEPS      = 360        # Steps per rollout (1800s episode / 5s delta = 360 decisions)
-N_EPOCHS     = 4          # PPO update epochs per rollout
-BATCH_SIZE   = 60
+N_STEPS      = 1800       # Steps per rollout (5 episodes of 360 decisions)
+N_EPOCHS     = 10         # PPO update epochs per rollout
+BATCH_SIZE   = 300
 MAX_GRAD_NORM = 0.5
 
 # Curriculum: grades for the cleaned (83%-reduced) network
@@ -106,12 +106,14 @@ class CTDETrainer:
         for t in self.tls_ids:
             print(f"  {t}: obs={self.obs_dims[t]}  actions={self.act_dims[t]}")
 
-        # ── Build actors + shared critic ───────────────────────────────────
+        # ── Build actors + shared critic (multi-head) ──────────────────────
         self.actors: dict[str, MAPPOActor] = {
             t: MAPPOActor(self.obs_dims[t], self.act_dims[t]).to(self.device)
             for t in self.tls_ids
         }
-        self.critic = MAPPOCritic(self.global_dim).to(self.device)
+        # Multi-head critic: shared trunk + one V_i(s) head per junction
+        # Prevents cross-agent reward-scale contamination
+        self.critic = MAPPOCritic(self.global_dim, self.tls_ids).to(self.device)
 
         # Separate optimizers: one per actor + one for critic
         self.actor_optims: dict[str, torch.optim.Adam] = {
@@ -189,17 +191,20 @@ class CTDETrainer:
             for start in range(0, T - BATCH_SIZE + 1, BATCH_SIZE):
                 batch_idx = torch.tensor(indices[start:start + BATCH_SIZE], device=self.device)
 
-                # ── Critic update (shared, uses all-agent global state) ──
-                # Pick any agent's global_state — they all store the same thing
+                # ── Critic update (multi-head: one loss per agent, summed) ──
+                # All agents store identical global_state — pick any one
                 gs = tensors[self.tls_ids[0]]["global_state"][batch_idx]
-                # Average returns across all agents for critic target
-                avg_returns = torch.stack(
-                    [torch.tensor(returns_dict[t], device=self.device)[batch_idx]
-                     for t in self.tls_ids]
-                ).mean(dim=0)
+                all_v_preds = self.critic(gs)  # dict[agent_id → (batch,)]
 
-                v_pred = self.critic(gs)
-                critic_loss = nn.functional.mse_loss(v_pred, avg_returns)
+                # Sum MSE losses across per-agent heads — each head fits its
+                # own scale, trunk gradients are the average of all signals
+                critic_loss = sum(
+                    nn.functional.mse_loss(
+                        all_v_preds[t],
+                        torch.tensor(returns_dict[t], device=self.device)[batch_idx]
+                    )
+                    for t in self.tls_ids
+                )
 
                 self.critic_optim.zero_grad()
                 critic_loss.backward()
@@ -298,14 +303,15 @@ class CTDETrainer:
 
             with torch.no_grad():
                 critic_input = torch.tensor(global_state, device=self.device).unsqueeze(0)
-                value = self.critic(critic_input).item()
+                # Multi-head: each agent gets its own V_i(s)
+                all_values = self.critic(critic_input)
 
                 for t in self.tls_ids:
                     obs_t = torch.tensor(obs_dict[t], device=self.device).unsqueeze(0)
                     action, log_prob, _ = self.actors[t].get_action_and_logprob(obs_t)
                     actions_dict[t]   = action.item()
                     log_probs_dict[t] = log_prob.item()
-                    values_dict[t]    = value  # same centralized V(s) for all agents
+                    values_dict[t]    = all_values[t].item()  # agent-specific V_i(s)
 
             next_obs_dict, global_reward, terminated, _, info = env.step(actions_dict)
             self.steps_collected += self.delta_time

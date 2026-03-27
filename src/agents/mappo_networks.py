@@ -3,13 +3,17 @@ MAPPO Network Components for Centralized Training, Decentralized Execution (CTDE
 
 Contains:
   - MAPPOActor:        Per-agent local policy network (obs_i → action logits)
-  - MAPPOCritic:       Shared centralized value network (global_state → V(s))
+  - MAPPOCritic:       Shared-trunk centralized value network with per-agent heads
+                       (global_state → V_i(s) for each agent i)
   - MAPPORolloutBuffer: Per-agent trajectory storage with GAE computation
 
 Design choices:
   - Each junction gets its own Actor (heterogeneous obs/action dims)
-  - All junctions share ONE Critic seeing global state (all obs zero-padded & concatenated)
-  - Per-junction LOCAL rewards drive per-actor advantages (not global sum)
+  - All junctions share ONE Critic trunk seeing global state, but each junction
+    has its OWN value head V_i(s). This prevents reward-scale contamination
+    when junctions have wildly different reward magnitudes (a 5-way complex
+    junction gets ~10x more reward signal than a T-junction).
+  - Per-junction LOCAL rewards → per-agent advantages via their own V_i(s)
   - Zero-padding to max_obs_dim handles heterogeneous obs dimensions cleanly
 """
 from __future__ import annotations
@@ -64,23 +68,58 @@ class MAPPOActor(nn.Module):
 
 class MAPPOCritic(nn.Module):
     """
-    Centralized value network — shared across all agents.
-    Input:  global state  s = concat(pad(o_1), ..., pad(o_N))  (shape: global_dim,)
-    Output: scalar value  V(s)
+    Centralized value network — shared trunk, per-agent output heads.
+
+    Architecture:
+        global_state  (global_dim,)
+            → Shared Trunk: Linear(global_dim, 128) → Tanh → Linear(128, 64) → Tanh
+                → Per-agent heads: Linear(64, 1) × N_agents
+
+    Each agent i gets its own V_i(s) estimate so different reward scales across
+    heterogeneous junctions don't contaminate each other's value targets.
+
+    Args:
+        global_dim:  Length of the concatenated+padded global state vector.
+        agent_ids:   Ordered list of agent IDs (defines head ordering/indexing).
+        hidden:      Width of the shared trunk (default 128).
     """
 
-    def __init__(self, global_dim: int, hidden: int = 128) -> None:
+    def __init__(self, global_dim: int, agent_ids: list[str], hidden: int = 128) -> None:
         super().__init__()
-        self.net = nn.Sequential(
+        self.agent_ids = agent_ids
+        self.n_agents  = len(agent_ids)
+
+        # Shared encoder trunk — sees the full global state
+        self.trunk = nn.Sequential(
             nn.Linear(global_dim, hidden),
             nn.Tanh(),
             nn.Linear(hidden, hidden // 2),
             nn.Tanh(),
-            nn.Linear(hidden // 2, 1),
         )
 
-    def forward(self, global_state: torch.Tensor) -> torch.Tensor:
-        return self.net(global_state).squeeze(-1)
+        # One independent value head per agent
+        self.heads = nn.ModuleDict({
+            agent_id: nn.Linear(hidden // 2, 1)
+            for agent_id in agent_ids
+        })
+
+    def forward(self, global_state: torch.Tensor) -> dict[str, torch.Tensor]:
+        """
+        Args:
+            global_state: Tensor of shape (batch, global_dim) or (global_dim,)
+        Returns:
+            dict mapping agent_id → value tensor of shape (batch,)
+        """
+        features = self.trunk(global_state)
+        return {
+            agent_id: self.heads[agent_id](features).squeeze(-1)
+            for agent_id in self.agent_ids
+        }
+
+    def get_value(self, global_state: torch.Tensor, agent_id: str) -> torch.Tensor:
+        """Convenience: get V_i(s) for a single agent. Shape: scalar or (batch,)."""
+        features = self.trunk(global_state)
+        return self.heads[agent_id](features).squeeze(-1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
