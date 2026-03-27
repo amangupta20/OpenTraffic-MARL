@@ -50,9 +50,9 @@ grid-demo:
 # ═══════════════════════════════════════════════════════════════════
 
 # Preprocess: remove internal-compound trips, reduce density (run once before training)
-#   make blr-filter-trips DENSITY=0.65
+#   make blr-filter-trips DENSITY=0.45
 blr-filter-trips:
-	docker compose run --rm --entrypoint python3 agent scripts/filter_trips.py --density-factor $(or $(DENSITY),0.65)
+	docker compose run --rm --entrypoint python3 agent scripts/filter_trips.py --density-factor $(or $(DENSITY),0.45)
 
 # Train 5 heterogeneous PPO agents simultaneously using Curriculum Learning
 blr-train:

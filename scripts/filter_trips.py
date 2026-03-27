@@ -15,6 +15,7 @@ The bangalore_corridor env is then pointed at the cleaned files via sumocfg.
 import argparse
 import gzip
 import pathlib
+import random
 import shutil
 import xml.etree.ElementTree as ET
 
@@ -74,7 +75,7 @@ def find_reachable_edges(net_path: pathlib.Path, tls_edges: set[str]) -> set[str
     edges reachable within N hops. This captures the full main corridor.
     Edges NOT reachable are the internal dead-end compounds.
     """
-    MAX_HOPS = 4  # Allow up to 4 edges away from any TLS junction
+    MAX_HOPS = 2  # Allow up to 2 edges away from any TLS junction
 
     print(f"[filter] Building adjacency graph (max {MAX_HOPS} hops from TLS)...")
 
@@ -90,7 +91,7 @@ def find_reachable_edges(net_path: pathlib.Path, tls_edges: set[str]) -> set[str
     edge_to:   dict[str, str] = {}
 
     # Identify parking lanes and small service roads to explicitly exclude
-    restricted_types = {"highway.service", "highway.residential", "highway.unclassified", "highway.cycleway", "highway.footway"}
+    restricted_types = {"highway.service", "highway.residential", "highway.tertiary", "highway.unclassified", "highway.cycleway", "highway.footway"}
     restricted_edges: set[str] = set()
 
     for edge in root.iter("edge"):
@@ -167,8 +168,8 @@ def filter_trip_file(
             removed_edge += 1
             continue
 
-        # Density thinning: remove every (stride-th+1) trip
-        if stride > 1 and (i % stride) != 0:
+        # Density thinning: remove with probability (1 - density_factor)
+        if random.random() > density_factor:
             root.remove(el)
             continue
 

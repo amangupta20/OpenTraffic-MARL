@@ -98,7 +98,10 @@ Running `make blr-compare` resumes the original training run so the comparison p
 Train the Centralized Training, Decentralized Execution (CTDE) architecture on the Bangalore corridor. This features a shared global critic and decentralized per-junction actors.
 
 ```bash
-# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0)
+# Pre-filter the network trips to prevent centre gridlocks (run once)
+make blr-filter-trips DENSITY=0.45
+
+# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0, N_STEPS=1800, Batch=300)
 make ctde-train ARGS="--run-name ctde-run-1 --timesteps 500000"
 
 # 3-way comparison plot (Static vs IndePPO vs CTDE) — logs to the CTDE W&B run

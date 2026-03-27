@@ -582,19 +582,25 @@ Input: local obs o_i  (dim = obs_dim_i, varies per junction type)
 Output: action logits (Categorical distribution over green phases)
 ```
 
-**Shared Central Critic** (`MAPPOCritic`) — one for all agents:
+**Shared Central Critic** (`MAPPOCritic`) — shared trunk, per-agent output heads:
 
 ```
 Input: global_state s = concat(pad(o_1, max_d), ..., pad(o_N, max_d))
        where max_d = max obs_dim across all junctions
        → global_dim = N × max_d  (5 junctions × 16 = 80)
-  → Linear(80, 128) → Tanh
-  → Linear(128, 64) → Tanh
-  → Linear(64, 1)
-Output: scalar V(s)
+
+  Shared Trunk (14,528 params):
+    → Linear(80, 128) → Tanh
+    → Linear(128, 64) → Tanh
+    → features  (dim=64)
+
+  Per-Agent Heads (195 params, one per junction):
+    → Linear(64, 1) for agent i  →  V_i(s)  (scalar per agent)
 ```
 
-**Heterogeneous obs handling:** Each agent's observation is **zero-padded** to `max_obs_dim` before concatenation. This allows a single fixed-size Critic to handle junctions of different topologies without type-specific output heads.
+**Why per-agent heads?** Junctions differ enormously in reward scale — a 5-way complex junction accumulates ~10× more reward signal per step than a T-junction. A single output head trained on their average target diverges (see: `critic_loss=816` in early runs). Per-agent heads let each junction calibrate its own value scale while still sharing the global-state representation in the trunk.
+
+**Heterogeneous obs handling:** Each agent's observation is **zero-padded** to `max_obs_dim` before concatenation. This allows a single fixed-size Critic trunk to handle junctions of different topologies without replication.
 
 | Junction ID | Type | obs_dim | n_actions |
 |-------------|------|--------:|----------:|
@@ -631,13 +637,13 @@ $$\hat{A}_t^i = \sum_{k=0}^{T-t-1} (\gamma \lambda)^k \delta_{t+k}^i, \quad \del
 | Discount factor γ | 0.99 |
 | GAE λ | 0.95 |
 | PPO clip ε | 0.2 |
-| Entropy coefficient | 0.01 |
+| Entropy coefficient | 0.05 |
 | Value coefficient | 0.5 |
 | Actor learning rate | 3×10⁻⁴ |
 | Critic learning rate | 3×10⁻⁴ |
-| Rollout steps N | 360 |
-| PPO epochs per rollout | 4 |
-| Batch size | 60 |
+| Rollout steps N | 1800 |
+| PPO epochs | 10 |
+| Batch size | 300 |
 | Max gradient norm | 0.5 |
 
 ### 9.5 Curriculum
