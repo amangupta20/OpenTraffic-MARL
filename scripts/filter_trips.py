@@ -89,10 +89,19 @@ def find_reachable_edges(net_path: pathlib.Path, tls_edges: set[str]) -> set[str
     edge_from: dict[str, str] = {}
     edge_to:   dict[str, str] = {}
 
+    # Identify parking lanes and small service roads to explicitly exclude
+    restricted_types = {"highway.service", "highway.residential", "highway.unclassified", "highway.cycleway", "highway.footway"}
+    restricted_edges: set[str] = set()
+
     for edge in root.iter("edge"):
         eid = edge.get("id", "")
         if eid.startswith(":"):
             continue
+        
+        edge_type = edge.get("type", "")
+        if edge_type in restricted_types:
+            restricted_edges.add(eid)
+            
         fn = edge.get("from", "")
         tn = edge.get("to", "")
         edge_from[eid] = fn
@@ -121,7 +130,10 @@ def find_reachable_edges(net_path: pathlib.Path, tls_edges: set[str]) -> set[str
         frontier = next_frontier
         print(f"[filter]   hop {hop+1}: {len(visited)} reachable edges")
 
-    return visited
+    # Remove the restricted edges completely from the allowed list
+    filtered_visited = visited - restricted_edges
+    print(f"[filter] Excluded {len(restricted_edges)} parking/service/residential edges.")
+    return filtered_visited
 
 
 def filter_trip_file(
@@ -187,7 +199,7 @@ def patch_sumocfg(net_dir: pathlib.Path, dry_run: bool) -> None:
         rf = inp.find("route-files")
         if rf is not None:
             orig = rf.get("value", "")
-            cleaned = orig.replace(".trips.xml", "_cleaned.xml") \
+            cleaned = orig.replace(".trips.xml", ".trips_cleaned.xml") \
                           .replace(".rou.xml", ".rou.xml")  # keep pedestrian rou.xml
             rf.set("value", cleaned)
 

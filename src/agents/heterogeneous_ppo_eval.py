@@ -33,7 +33,7 @@ RESULTS_DIR = MODELS_DIR.parent / "results"
 META_PATH   = MODELS_DIR / "blr_run_metadata.json"
 
 # Curriculum: use eval scale (grad 3 = 0.6) to match end-of-training conditions
-EVAL_SCALE  = 0.6
+EVAL_SCALE  = 0.8
 MAX_STEPS   = 1800
 DELTA_TIME  = 5
 GREEN_DUR   = 30   # static-timer green phase duration (seconds)
