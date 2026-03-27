@@ -161,9 +161,26 @@ def train_heterogeneous(
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     start_metrics_server(port)
     
+    # Determine wandb mode: 
+    #   1. "disabled" if it's a tiny sanity check or name starts with "sanity"
+    #   2. "offline" if no API key is provided
+    #   3. "online" otherwise
+    wandb_key = os.environ.get("WANDB_API_KEY")
+    is_sanity = total_timesteps < 1000 or (run_name and run_name.lower().startswith("sanity"))
+    
+    if is_sanity:
+        mode = "disabled"
+    elif not wandb_key:
+        mode = "offline"
+    else:
+        mode = "online"
+
+    print(f"[wandb] Initializing in {mode} mode (sanity={is_sanity}, key_present={bool(wandb_key)})")
+
     wandb.init(
         project="marl-traffic",
         name=run_name,
+        mode=mode,
         config={
             "total_timesteps": total_timesteps, 
             "curriculum": True, 
