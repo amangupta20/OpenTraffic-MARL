@@ -6,6 +6,7 @@ agents communicate via a Coordinator wrapper with `MultiAgentSharedSubproc`.
 """
 
 import argparse
+import json
 import os
 import pathlib
 import threading
@@ -279,12 +280,14 @@ def train_parallel(
     
     threads = []
     
+    saved_paths: list[str] = []
+
     def learn_agent(t: str, model: PPO):
         print(f"[{t}] PPO Thread Started")
-        
-        # SB3 learn() calls reset() which inherently syncs on our `reset_barrier`
         model.learn(total_timesteps=total_timesteps)
-        model.save(str(MODELS_DIR / f"ppo_blr_parallel_{t}.zip"))
+        save_path = str(MODELS_DIR / f"ppo_blr_parallel_{t}.zip")
+        model.save(save_path)
+        saved_paths.append(save_path)
         print(f"[{t}] PPO Thread Finished & Saved")
 
     start_t = time.time()
@@ -297,8 +300,30 @@ def train_parallel(
         th.join()
         
     wall_clock = time.time() - start_t
-    print(f"\n[{wandb.run.name}] Complete! {total_timesteps} steps in {wall_clock:.1f}s (Overall FPS: {total_timesteps/wall_clock:.1f})")
+    run_name = wandb.run.name
+    run_id   = wandb.run.id
+    print(f"\n[{run_name}] Complete! {total_timesteps} steps in {wall_clock:.1f}s (Overall FPS: {total_timesteps/wall_clock:.1f})")
     
+    # ── Upload model weights as a versioned W&B artifact ──────────────────
+    print("[wandb] Uploading model weights as artifact...")
+    artifact = wandb.Artifact(
+        name=f"blr-ppo-models-{run_name}",
+        type="model",
+        description=f"Parallel heterogeneous PPO weights — {len(tls_ids)} agents, {total_timesteps} steps",
+        metadata={"num_agents": len(tls_ids), "num_envs": num_envs, "total_timesteps": total_timesteps},
+    )
+    for p in saved_paths:
+        artifact.add_file(p)
+    wandb.log_artifact(artifact)
+    print(f"[wandb] Artifact logged: blr-ppo-models-{run_name}")
+
+    # ── Persist run metadata so blr-compare can resume this run ──────────
+    metadata = {"run_id": run_id, "run_name": run_name, "project": "marl-traffic"}
+    meta_path = MODELS_DIR / "blr_run_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    print(f"[wandb] Run metadata saved to {meta_path}")
+
     multi_env.close()
     wandb.finish()
 

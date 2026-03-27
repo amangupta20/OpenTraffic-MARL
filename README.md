@@ -78,7 +78,20 @@ Train the hierarchical heterogeneous multi-agent reinforcement learning system o
 ```bash
 # Train heterogeneous PPO agents on the Bangalore Corridor (starts at 0.2x scale)
 make blr-train ARGS="--run-name bangalore-curriculum --timesteps 500000"
+
+# Run comparison: static timer vs trained PPO → results logged to the SAME W&B run
+make blr-compare
+
+# Visual demo (sumo-gui streamed at http://localhost:6080)
+make blr-demo
+
+# Headless evaluate only (no comparison)
+make blr-eval
 ```
+
+Model weights are automatically uploaded as a versioned W&B Artifact (`blr-ppo-models-<run-name>`) at the end of training.  
+Running `make blr-compare` resumes the original training run so the comparison plot and metrics appear on the **same W&B run page**.
+
 
 ## Experiment Tracking (Weights & Biases)
 

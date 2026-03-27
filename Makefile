@@ -1,4 +1,4 @@
-.PHONY: build train eval dumb compare grid-eval grid-static grid-compare grid-demo demo tb dashboard down logs clean wandb-login
+.PHONY: build train eval dumb compare grid-eval grid-static grid-compare grid-demo demo tb dashboard down logs clean wandb-login blr-train blr-eval blr-static blr-compare blr-demo
 
 # ═══════════════════════════════════════════════════════════════════
 # Docker-first workflow (reproducible, host-independent)
@@ -52,6 +52,22 @@ grid-demo:
 # Train 5 heterogeneous PPO agents simultaneously using Curriculum Learning
 blr-train:
 	docker compose run --rm -e MODE=blr-train agent $(ARGS)
+
+# Evaluate trained PPO agents on Bangalore corridor (headless)
+blr-eval:
+	docker compose run --rm -e MODE=blr-eval agent $(ARGS)
+
+# Run static-timer baseline on Bangalore corridor
+blr-static:
+	docker compose run --rm -e MODE=blr-static agent $(ARGS)
+
+# Compare static timer vs trained PPO — logs results to training W&B run
+blr-compare:
+	docker compose run --rm -e MODE=blr-compare agent $(ARGS)
+
+# Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
+blr-demo:
+	docker compose run --rm -p 6080:6080 -e MODE=blr-demo agent $(ARGS)
 
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:

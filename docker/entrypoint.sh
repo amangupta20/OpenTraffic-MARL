@@ -77,11 +77,39 @@ case "$MODE" in
     echo "[entrypoint] Training independent PPO agents on Bangalore MG Road (Curriculum, Parallel MP)"
     exec python3 -m src.agents.heterogeneous_ppo_parallel --train "$@"
     ;;
+  blr-eval)
+    echo "[entrypoint] Evaluating PPO agents on Bangalore MG Road"
+    exec python3 -m src.agents.heterogeneous_ppo_eval --evaluate "$@"
+    ;;
+  blr-static)
+    echo "[entrypoint] Running static-timer baseline on Bangalore MG Road"
+    exec python3 -m src.agents.heterogeneous_ppo_eval --static "$@"
+    ;;
+  blr-compare)
+    echo "[entrypoint] Comparing static timer vs PPO on Bangalore MG Road"
+    exec python3 -m src.agents.heterogeneous_ppo_eval --compare "$@"
+    ;;
+  blr-demo)
+    echo "[entrypoint] Starting visual demo — Bangalore MG Road (sumo-gui via noVNC)"
+
+    Xvfb :99 -screen 0 1280x720x24 &
+    export DISPLAY=:99
+    sleep 1
+
+    x11vnc -display :99 -forever -nopw -quiet &
+    sleep 1
+
+    websockify --web=/usr/share/novnc 6080 localhost:5900 &
+    sleep 1
+
+    echo "[entrypoint] noVNC available at http://localhost:6080"
+    exec python3 -m src.agents.heterogeneous_ppo_eval --demo "$@"
+    ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
-    echo "             grid-eval|grid-static|grid-compare"
-    echo "             blr-train"
+    echo "             grid-eval|grid-static|grid-compare|grid-demo"
+    echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo"
     exit 1
     ;;
 esac
