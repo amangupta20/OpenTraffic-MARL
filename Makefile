@@ -49,6 +49,11 @@ grid-demo:
 # Stage 3: Bangalore MG Road — Heterogeneous Multi-Agent (Curriculum)
 # ═══════════════════════════════════════════════════════════════════
 
+# Preprocess: remove internal-compound trips, reduce density (run once before training)
+#   make blr-filter-trips DENSITY=0.65
+blr-filter-trips:
+	docker compose run --rm --entrypoint python3 agent scripts/filter_trips.py --density-factor $(or $(DENSITY),0.65)
+
 # Train 5 heterogeneous PPO agents simultaneously using Curriculum Learning
 blr-train:
 	docker compose run --rm -e MODE=blr-train agent $(ARGS)

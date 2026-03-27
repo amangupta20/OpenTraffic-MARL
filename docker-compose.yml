@@ -11,7 +11,8 @@ services:
       - "8000:8000"
     volumes:
       - ./src:/app/src:ro
-      - ./sumo_net:/app/sumo_net:ro
+      - ./scripts:/app/scripts:ro
+      - ./sumo_net:/app/sumo_net
       - ./models:/app/models
       - ./tb_logs:/app/tb_logs
       - ./results:/app/results

@@ -14,7 +14,10 @@ from gymnasium import spaces
 
 # SUMO paths
 _NET_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "sumo_net" / "bangalore_mg_road"
-_SUMOCFG = str(_NET_DIR / "osm.sumocfg")
+_SUMOCFG_CLEANED = str(_NET_DIR / "osm_cleaned.sumocfg")
+_SUMOCFG_ORIG    = str(_NET_DIR / "osm.sumocfg")
+# Use the filtered config if available (run scripts/filter_trips.py to generate it)
+_SUMOCFG = _SUMOCFG_CLEANED if (_NET_DIR / "osm_cleaned.sumocfg").exists() else _SUMOCFG_ORIG
 
 YELLOW_DURATION = 5
 
