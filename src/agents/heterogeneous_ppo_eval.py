@@ -33,8 +33,8 @@ RESULTS_DIR = MODELS_DIR.parent / "results"
 META_PATH   = MODELS_DIR / "blr_run_metadata.json"
 
 # Curriculum: use eval scale (grad 3 = 0.6) to match end-of-training conditions
-EVAL_SCALE  = 0.8
-MAX_STEPS   = 1800
+EVAL_SCALE  = 2
+MAX_STEPS   = 3600
 DELTA_TIME  = 5
 GREEN_DUR   = 30   # static-timer green phase duration (seconds)
 
@@ -86,11 +86,11 @@ def _load_models(tls_ids: list[str]) -> dict[str, PPO]:
 # Static-timer baseline
 # ---------------------------------------------------------------------------
 
-def run_blr_static(metrics_port: int = 8000) -> list[dict]:
+def run_blr_static(metrics_port: int = 8000, use_gui: bool = False) -> list[dict]:
     """Fixed green-phase timer for all junctions — Bangalore corridor."""
     start_metrics_server(metrics_port)
 
-    env = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS,
+    env = make_env("bangalore_corridor", use_gui=use_gui, max_steps=MAX_STEPS,
                    delta_time=DELTA_TIME, scale=EVAL_SCALE)
     tls_ids = env.tls_ids
     obs, info = env.reset()
@@ -335,7 +335,8 @@ def main():
     group.add_argument("--evaluate", action="store_true", help="Run trained PPO agents (headless)")
     group.add_argument("--static",   action="store_true", help="Run static-timer baseline")
     group.add_argument("--compare",  action="store_true", help="Compare static vs PPO → W&B")
-    group.add_argument("--demo",     action="store_true", help="Visual demo (sumo-gui)")
+    group.add_argument("--demo",     action="store_true", help="Visual demo (sumo-gui) of PPO")
+    group.add_argument("--static-demo", action="store_true", help="Visual demo of static timer baseline")
     parser.add_argument("--run-name", type=str, default="blr-comparison")
     parser.add_argument("--port",     type=int, default=8000)
     args = parser.parse_args()
@@ -348,6 +349,8 @@ def main():
         run_blr_comparison(wandb_run_name=args.run_name)
     elif args.demo:
         run_blr_ppo(metrics_port=args.port, use_gui=True)
+    elif args.static_demo:
+        run_blr_static(metrics_port=args.port, use_gui=True)
 
 
 if __name__ == "__main__":

@@ -74,6 +74,10 @@ blr-compare:
 blr-demo:
 	docker compose run --rm -p 6080:6080 -e MODE=blr-demo agent $(ARGS)
 
+# Visual demo of static timer baseline (sumo-gui streamed via noVNC)
+blr-dumb-demo:
+	docker compose run --rm -p 6080:6080 -e MODE=blr-dumb-demo agent $(ARGS)
+
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:
 	docker compose --profile demo up demo

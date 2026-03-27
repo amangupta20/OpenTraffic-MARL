@@ -105,11 +105,27 @@ case "$MODE" in
     echo "[entrypoint] noVNC available at http://localhost:6080"
     exec python3 -m src.agents.heterogeneous_ppo_eval --demo "$@"
     ;;
+  blr-dumb-demo)
+    echo "[entrypoint] Starting static baseline visual demo — Bangalore MG Road"
+
+    Xvfb :99 -screen 0 1280x720x24 &
+    export DISPLAY=:99
+    sleep 1
+
+    x11vnc -display :99 -forever -nopw -quiet &
+    sleep 1
+
+    websockify --web=/usr/share/novnc 6080 localhost:5900 &
+    sleep 1
+
+    echo "[entrypoint] noVNC available at http://localhost:6080"
+    exec python3 -m src.agents.heterogeneous_ppo_eval --static-demo "$@"
+    ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
     echo "             grid-eval|grid-static|grid-compare|grid-demo"
-    echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo"
+    echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo|blr-dumb-demo"
     exit 1
     ;;
 esac
