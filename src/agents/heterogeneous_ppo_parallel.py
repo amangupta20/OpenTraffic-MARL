@@ -58,7 +58,7 @@ class SubprocCoordinator:
         # FPS Tracking
         self._wall_start = time.time()
         self._step_count_for_fps = 0
-        self._last_scale = 0.2
+        self._last_scale = 0.75
         
     def set_action(self, tls_id: str, actions: np.ndarray):
         """Called by AgentFacadeVecEnv.step_async() in a PPO thread."""
@@ -114,13 +114,13 @@ class SubprocCoordinator:
             
         progress_pct = self._step_count_for_fps / self.total_timesteps
         
-        target_scale = 0.2
+        target_scale = 0.75
         target_grade = 0
         if progress_pct >= 0.40:
-            target_scale = 0.6
+            target_scale = 2.0
             target_grade = 2
         elif progress_pct >= 0.15:
-            target_scale = 0.4
+            target_scale = 1.5
             target_grade = 1
             
         if self.current_grade_idx != target_grade:
@@ -235,7 +235,7 @@ def train_parallel(
         config={
             "total_timesteps": total_timesteps, 
             "curriculum": True, 
-            "scale_stages": [0.2, 0.4, 0.6],
+            "scale_stages": [0.75, 1.5, 2.0],
             "num_envs": num_envs,
             "architecture": "parallel_multiprocess"
         },
@@ -243,7 +243,7 @@ def train_parallel(
 
     # 1. Instantiate Dummy to extract API signatures natively 
     print("[Master] Extracting dynamic junction signatures...")
-    dummy_env = make_env("bangalore_corridor", use_gui=False, max_steps=1800, scale=0.2)
+    dummy_env = make_env("bangalore_corridor", use_gui=False, max_steps=1800, scale=0.75)
     tls_ids = dummy_env.tls_ids
     obs_spaces = dummy_env.observation_space.spaces
     act_spaces = dummy_env.action_space.spaces
@@ -254,7 +254,7 @@ def train_parallel(
     
     # 2. Build Subproc Manager
     def create_env_fn():
-        return make_env("bangalore_corridor", use_gui=False, max_steps=1800, scale=0.2)
+        return make_env("bangalore_corridor", use_gui=False, max_steps=1800, scale=0.75)
         
     multi_env = MultiAgentSharedSubproc([create_env_fn for _ in range(num_envs)])
     

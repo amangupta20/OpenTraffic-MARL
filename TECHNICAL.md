@@ -348,14 +348,16 @@ Each junction gets its own uniquely-sized PPO model (`MlpPolicy`). The action sp
 
 ### 7.3 Curriculum Learning
 
-Due to massive gridlock and vehicle teleportation (~30% teleport rate) at `scale=1.0`, training employs a custom **Curriculum Learning** pipeline.
+After filtering out internal service/parking trips (83% total trip reduction), the effective corridor load is significantly reduced. The curriculum is **re-calibrated** to reflect realistic stress levels on the cleaned network:
 
-| Grade | `scale` | Traffic Density |
-|:-----:|:-------:|:---------------:|
-| 1 | 0.2 | 20% |
-| 2 | 0.4 | 40% |
-| 3 | 0.6 | 60% |
-| 4* | 0.8 | 80% (Eval/Stress) |
+| Grade | `scale` | Effective Density | Description |
+|:-----:|:-------:|:-----------------:|-------------|
+| 1 | 0.75 | ~75% of cleaned volume | Foundational: green means go, queue clearing |
+| 2 | 1.50 | ~150% of cleaned volume | Sustained pressure, multi-junction spillback |
+| 3 | 2.00 | 2× cleaned volume | Adversarial stress: proven stable in demo |
+| Eval | 2.00 | 2× cleaned volume | Evaluation and comparison benchmark |
+
+> **Why start at 0.75?** At `scale=0.2` on the cleaned network, the corridor is almost empty — agents get a flat reward signal and learn nothing. The old curriculum (0.2→0.4→0.6) was calibrated for the unfiltered network where those scales created moderate congestion. After removing 83% of trips, 0.75× cleaned volume is equivalent in difficulty to ~0.14× unfiltered volume — dense enough to create meaningful queues but not immediately gridlocked.
 
 The Multi-Agent PPO system uses a multi-processed `SubprocCoordinator` pattern to multiplex actions from independent `PPO.learn()` threads across parallel SUMO worker processes via `multiprocessing.Pipe`. This shared-vectorizer architecture achieves true parallelism, scaling from ~25 FPS to >100 FPS. The Coordinator also intercepts `env.reset()` calls to dynamically inject scaling promotions based on training progress (first 15% at Grade 1, next 25% at Grade 2, final 60% at Grade 3) and synchronizes all parallel workers to the new curriculum scale.
 
