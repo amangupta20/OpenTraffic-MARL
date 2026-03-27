@@ -27,10 +27,11 @@ MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
 class Coordinator:
     """Synchronizes multi-agent stepping and resetting for independent PPO loops."""
 
-    def __init__(self, master_env: gym.Env, tls_ids: list[str]):
+    def __init__(self, master_env: gym.Env, tls_ids: list[str], total_timesteps: int):
         self.master_env = master_env
         self.tls_ids = tls_ids
         self.num_agents = len(tls_ids)
+        self.total_timesteps = total_timesteps
         
         # State buffers
         self.actions = {}
@@ -85,16 +86,29 @@ class Coordinator:
 
     def _reset_master(self):
         """Called by the last agent to reach the reset barrier; resets the SUMO simulation."""
-        # Curriculum promotion logic
+        # Curriculum promotion logic based on training progress
         self.episodes_completed += 1
         
-        # Promote every 10 episodes for the sake of the curriculum demo
-        # (In a real scenario, this would check average reward thresholds)
-        if self.episodes_completed % 15 == 0 and self.current_grade_idx < len(self.curriculum_grades) - 1:
-            self.current_grade_idx += 1
-            new_scale = self.curriculum_grades[self.current_grade_idx]
-            print(f"\n{'='*50}\n[CURRICULUM] Promoting to Grade {self.current_grade_idx + 1}: scale={new_scale}\n{'='*50}\n")
-            self.master_env.scale = new_scale
+        # Approximate agent steps completed 
+        # (max_steps // delta_time = 360 steps per episode)
+        steps_per_episode = self.master_env.max_steps // self.master_env.delta_time
+        agent_steps_completed = self.episodes_completed * steps_per_episode
+        progress = agent_steps_completed / self.total_timesteps
+        
+        target_scale = 0.2
+        target_grade = 0
+        
+        if progress >= 0.40:    # Last 60% of steps runs on 0.6
+            target_scale = 0.6
+            target_grade = 2
+        elif progress >= 0.15:  # Next 25% of steps runs on 0.4
+            target_scale = 0.4
+            target_grade = 1
+            
+        if self.current_grade_idx != target_grade:
+            self.current_grade_idx = target_grade
+            print(f"\n{'='*50}\n[CURRICULUM] Promoting to Grade {target_grade + 1}: scale={target_scale} (Progress: {progress*100:.1f}%)\n{'='*50}\n")
+            self.master_env.scale = target_scale
             
         new_obs, new_info = self.master_env.reset()
         
@@ -167,7 +181,7 @@ def train_heterogeneous(
     tls_ids = master_env.tls_ids
     print(f"Discovered {len(tls_ids)} Junctions: {tls_ids}")
     
-    coordinator = Coordinator(master_env, tls_ids)
+    coordinator = Coordinator(master_env, tls_ids, total_timesteps)
     facades = {t: AgentFacadeEnv(coordinator, t) for t in tls_ids}
     
     # We must seed the coordinator with the initial reset before training starts, 
