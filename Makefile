@@ -78,6 +78,27 @@ blr-demo:
 blr-dumb-demo:
 	docker compose run --rm -p 6080:6080 -e MODE=blr-dumb-demo agent $(ARGS)
 
+# ──────────────────────────────────────────────────────────────
+# Phase 3: CTDE MAPPO (Centralized Training, Decentralized Execution)
+# ──────────────────────────────────────────────────────────────
+
+# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0)
+# Usage: make ctde-train ARGS="--timesteps 500000 --run-name ctde-run-1"
+ctde-train:
+	docker compose run --rm -e MODE=ctde-train agent $(ARGS)
+
+# Decentralized eval — actors only, no critic needed
+ctde-eval:
+	docker compose run --rm -e MODE=ctde-eval agent $(ARGS)
+
+# 3-way comparison: Static Timer vs Independent PPO vs CTDE MAPPO
+ctde-compare:
+	docker compose run --rm -e MODE=ctde-compare agent $(ARGS)
+
+# Visual CTDE demo (sumo-gui streamed via noVNC at http://localhost:6080)
+ctde-demo:
+	docker compose run --rm -p 6080:6080 -e MODE=ctde-demo agent $(ARGS)
+
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:
 	docker compose --profile demo up demo

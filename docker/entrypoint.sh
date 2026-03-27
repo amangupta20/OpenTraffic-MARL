@@ -121,11 +121,40 @@ case "$MODE" in
     echo "[entrypoint] noVNC available at http://localhost:6080"
     exec python3 -m src.agents.heterogeneous_ppo_eval --static-demo "$@"
     ;;
+  ctde-train)
+    echo "[entrypoint] Training CTDE MAPPO agents on Bangalore MG Road"
+    exec python3 -m src.agents.ctde_mappo_train --train "$@"
+    ;;
+  ctde-eval)
+    echo "[entrypoint] Evaluating CTDE MAPPO agents (decentralized) on Bangalore MG Road"
+    exec python3 -m src.agents.ctde_mappo_eval --evaluate "$@"
+    ;;
+  ctde-compare)
+    echo "[entrypoint] 3-way comparison: Static Timer vs Independent PPO vs CTDE MAPPO"
+    exec python3 -m src.agents.ctde_mappo_eval --compare "$@"
+    ;;
+  ctde-demo)
+    echo "[entrypoint] Starting CTDE visual demo — Bangalore MG Road (sumo-gui via noVNC)"
+
+    Xvfb :99 -screen 0 1280x720x24 &
+    export DISPLAY=:99
+    sleep 1
+
+    x11vnc -display :99 -forever -nopw -quiet &
+    sleep 1
+
+    websockify --web=/usr/share/novnc 6080 localhost:5900 &
+    sleep 1
+
+    echo "[entrypoint] noVNC available at http://localhost:6080"
+    exec python3 -m src.agents.ctde_mappo_eval --demo "$@"
+    ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
     echo "             grid-eval|grid-static|grid-compare|grid-demo"
     echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo|blr-dumb-demo"
+    echo "             ctde-train|ctde-eval|ctde-compare|ctde-demo"
     exit 1
     ;;
 esac

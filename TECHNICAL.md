@@ -558,3 +558,121 @@ marl/
 └── README.md                              # Quick start guide
 ```
 
+---
+
+## 9. Phase 3: CTDE MAPPO Architecture
+
+### 9.1 Overview
+
+Phase 3 implements **Centralized Training, Decentralized Execution (CTDE)** using MAPPO (Multi-Agent PPO). It is the current academic state-of-the-art for cooperative MARL and serves as a direct comparison against Independent PPO (Phase 2).
+
+**Core principle:**
+- **Training** — A shared Central Critic observes the full global state (all agents' observations concatenated) and produces a better value estimate for computing advantages.
+- **Execution** — The critic is discarded. Each agent uses **only its local observation** through its individual decentralized Actor.
+
+### 9.2 Network Architecture
+
+**Per-Agent Actor** (`MAPPOActor`) — one per junction, heterogeneous weights:
+
+```
+Input: local obs o_i  (dim = obs_dim_i, varies per junction type)
+  → Linear(obs_dim_i, 64) → Tanh
+  → Linear(64, 64)        → Tanh
+  → Linear(64, n_actions_i)
+Output: action logits (Categorical distribution over green phases)
+```
+
+**Shared Central Critic** (`MAPPOCritic`) — one for all agents:
+
+```
+Input: global_state s = concat(pad(o_1, max_d), ..., pad(o_N, max_d))
+       where max_d = max obs_dim across all junctions
+       → global_dim = N × max_d  (5 junctions × 16 = 80)
+  → Linear(80, 128) → Tanh
+  → Linear(128, 64) → Tanh
+  → Linear(64, 1)
+Output: scalar V(s)
+```
+
+**Heterogeneous obs handling:** Each agent's observation is **zero-padded** to `max_obs_dim` before concatenation. This allows a single fixed-size Critic to handle junctions of different topologies without type-specific output heads.
+
+| Junction ID | Type | obs_dim | n_actions |
+|-------------|------|--------:|----------:|
+| `11854316015` | T-junction | 5 | 2 |
+| `cluster_...#8more` | 5-way complex | 16 | 6 |
+| `cluster_...#9more` | 5-way complex | 16 | 6 |
+| `cluster_...#6more` | 4-way | 13 | 6 |
+| `cluster_...#7more` | 3-way | 8 | 3 |
+
+### 9.3 Loss Functions
+
+**Actor loss (per-agent, PPO clipped surrogate):**
+
+$$\mathcal{L}_{\text{actor}}^i = -\mathbb{E}_t \left[ \min\left( r_t^i \hat{A}_t^i,\ \text{clip}(r_t^i, 1-\epsilon, 1+\epsilon) \hat{A}_t^i \right) \right]$$
+
+**Critic loss (shared, MSE on avg returns):**
+
+$$\mathcal{L}_{\text{critic}} = \mathbb{E}_t \left[ \left( V_\phi(s_t) - \bar{R}_t \right)^2 \right]$$
+
+where $\bar{R}_t$ is the mean discounted return across all agents.
+
+**Entropy bonus (per-actor):**
+
+$$\mathcal{L}_{\text{entropy}}^i = -c_{\text{ent}} \cdot \mathcal{H}[\pi_{\theta_i}(\cdot | o_t^i)]$$
+
+**GAE advantage** (using centralized critic values $V(s_t)$, local rewards $r_t^i$):
+
+$$\hat{A}_t^i = \sum_{k=0}^{T-t-1} (\gamma \lambda)^k \delta_{t+k}^i, \quad \delta_t^i = r_t^i + \gamma V(s_{t+1}) - V(s_t)$$
+
+### 9.4 Hyperparameters
+
+| Parameter | Value |
+|-----------|------:|
+| Discount factor γ | 0.99 |
+| GAE λ | 0.95 |
+| PPO clip ε | 0.2 |
+| Entropy coefficient | 0.01 |
+| Value coefficient | 0.5 |
+| Actor learning rate | 3×10⁻⁴ |
+| Critic learning rate | 3×10⁻⁴ |
+| Rollout steps N | 360 |
+| PPO epochs per rollout | 4 |
+| Batch size | 60 |
+| Max gradient norm | 0.5 |
+
+### 9.5 Curriculum
+
+Same re-calibrated curriculum as Independent PPO training:
+
+| Grade | `scale` | Progress threshold |
+|:-----:|:-------:|:-----------------:|
+| 1 | 0.75 | 0–15% |
+| 2 | 1.50 | 15–40% |
+| 3 | 2.00 | 40–100% |
+
+### 9.6 Evaluation & Comparison
+
+At evaluation time, only the trained actors are loaded — the critic is discarded. Deterministic actions are selected via `argmax` over actor logits.
+
+**3-way comparison** (`make ctde-compare`):
+1. Static Timer baseline
+2. Independent PPO (Phase 2 weights)
+3. CTDE MAPPO (Phase 3 weights)
+
+All three are run on the same environment configuration (`scale=2.0`, `max_steps=3600`) and a unified comparison plot is generated and uploaded to W&B.
+
+### 9.7 Commands
+
+```bash
+# Train CTDE MAPPO agents
+make ctde-train ARGS="--timesteps 500000 --run-name ctde-run-1"
+
+# Headless decentralized evaluation (no critic)
+make ctde-eval
+
+# 3-way comparison plot (Static vs IndePPO vs CTDE)
+make ctde-compare
+
+# Visual demo (open http://localhost:6080)
+make ctde-demo
+```
