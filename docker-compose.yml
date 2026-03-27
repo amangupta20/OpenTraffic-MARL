@@ -10,6 +10,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./src:/app/src:ro
+      - ./sumo_net:/app/sumo_net:ro
       - ./models:/app/models
       - ./tb_logs:/app/tb_logs
       - ./results:/app/results
@@ -25,6 +27,8 @@ services:
       - "6080:6080"
       - "8001:8000"
     volumes:
+      - ./src:/app/src:ro
+      - ./sumo_net:/app/sumo_net:ro
       - ./models:/app/models
     profiles:
       - demo

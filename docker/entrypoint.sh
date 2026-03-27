@@ -73,10 +73,15 @@ case "$MODE" in
     echo "[entrypoint] Comparing static vs cloned PPO on 2×2 grid"
     exec python3 -m src.agents.independent_ppo --compare "$@"
     ;;
+  blr-train)
+    echo "[entrypoint] Training independent PPO agents on Bangalore MG Road (Curriculum)"
+    exec python3 -m src.agents.heterogeneous_ppo --train "$@"
+    ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
     echo "             grid-eval|grid-static|grid-compare"
+    echo "             blr-train"
     exit 1
     ;;
 esac

@@ -316,7 +316,50 @@ Agents share weights but act independently — no communication between junction
 
 ---
 
-## 7. Experiment Tracking & Reproducibility
+## 7. Stage 3: Bangalore MG Road — Real-World Corridor
+
+### 7.1 Network Topology
+
+Real-world traffic network extracted from OpenStreetMap (OSM) representing the MG Road / Dickenson Road corridor in Bangalore, India.
+
+| Parameter | Value |
+|-----------|-------|
+| Corridor | MG Road & Dickenson Road, Bangalore |
+| Junctions Controlled | 5 (J1 through J5) |
+| Total Controlled Lanes | 390 |
+| Total Trip Demand | ~1855 inserted trips over 1800s (at `scale=1.0`) |
+| Transport Modes | Passenger, Pedestrian, Bike, Bus, Truck, Motorcycle |
+
+### 7.2 Heterogeneous Agents
+
+Unlike the synthetic Grid and Single intersection, the Bangalore network features highly irregular junction topologies.
+
+| Alias | Junction ID | Controlled? | Ext. Lanes | Green Phases | Obs Dim | Action Space |
+|:-----:|-------------|:-----------:|:----------:|:------------:|:-------:|:------------:|
+| J1 | `11854316015` | ✅ | 3 | 1 | 5 | Discrete(1) |
+| J2 | `cluster_...#8more` | ✅ | 12 | 3 | 14 | Discrete(3) |
+| J3 | `cluster_...#9more` | ✅ | 14 | 3 | 16 | Discrete(3) |
+| J4 | `cluster_...#6more` | ✅ | 9 | 3 | 11 | Discrete(3) |
+| J5 | `cluster_...#7more` | ✅ | 8 | 2 | 10 | Discrete(2) |
+
+Each junction gets its own uniquely-sized PPO model (`MlpPolicy`). The action space represents **"target green phase index"**. If the agent selects an action different from its current phase, a mandatory 5-second yellow transition is injected.
+
+### 7.3 Curriculum Learning
+
+Due to massive gridlock and vehicle teleportation (~30% teleport rate) at `scale=1.0`, training employs a custom **Curriculum Learning** pipeline.
+
+| Grade | `scale` | Traffic Density |
+|:-----:|:-------:|:---------------:|
+| 1 | 0.2 | 20% |
+| 2 | 0.4 | 40% |
+| 3 | 0.6 | 60% |
+| 4* | 0.8 | 80% (Eval/Stress) |
+
+The Multi-Agent PPO system uses a `Coordinator` pattern to synchronize independent `PPO.learn()` threads, intercepting `env.reset()` calls to inject scaling promotions.
+
+---
+
+## 8. Experiment Tracking & Reproducibility
 
 ### 7.1 Weights & Biases Integration
 
@@ -363,7 +406,7 @@ traffic_throughput        # Vehicles arrived (completed trip) per step
 
 ---
 
-## 8. Infrastructure
+## 9. Infrastructure
 
 ### 8.1 Reproducibility Model
 

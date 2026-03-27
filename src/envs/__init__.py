@@ -3,10 +3,12 @@
 
 from src.envs.single_intersection import SumoSingleIntersectionEnv
 from src.envs.grid_2x2 import SumoGrid2x2Env
+from src.envs.bangalore_corridor import SumoBangaloreCorridor
 
 ENV_REGISTRY = {
     "single_intersection": SumoSingleIntersectionEnv,
     "grid_2x2": SumoGrid2x2Env,
+    "bangalore_corridor": SumoBangaloreCorridor,
 }
 
 

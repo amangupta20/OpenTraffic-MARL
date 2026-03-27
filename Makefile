@@ -6,7 +6,7 @@
 
 # Build all container images (including demo)
 build:
-	docker compose --profile demo build
+	docker compose --progress=plain --profile demo build
 
 # Train PPO agent
 #   make train ARGS="--run-name baseline --timesteps 100000 --compare-static"
@@ -44,6 +44,14 @@ grid-compare:
 # Visual demo of 4 cloned PPO agents on 2×2 grid (noVNC at http://localhost:6080)
 grid-demo:
 	docker compose run --rm -p 6080:6080 -e MODE=grid-demo agent $(ARGS)
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 3: Bangalore MG Road — Heterogeneous Multi-Agent (Curriculum)
+# ═══════════════════════════════════════════════════════════════════
+
+# Train 5 heterogeneous PPO agents simultaneously using Curriculum Learning
+blr-train:
+	docker compose run --rm -e MODE=blr-train agent $(ARGS)
 
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:

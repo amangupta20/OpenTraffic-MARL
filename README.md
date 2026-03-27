@@ -71,6 +71,15 @@ make grid-compare ARGS="--run-name zero-shot-baseline"
 make grid-demo
 ```
 
+## Stage 3: Bangalore MG Road Corridor
+
+Train the hierarchical heterogeneous multi-agent reinforcement learning system on the Bangalore MG Road network with Curriculum Learning (starting from 0.2x scale):
+
+```bash
+# Train heterogeneous PPO agents on the Bangalore Corridor (starts at 0.2x scale)
+make blr-train ARGS="--run-name bangalore-curriculum --timesteps 500000"
+```
+
 ## Experiment Tracking (Weights & Biases)
 
 ```bash
