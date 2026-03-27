@@ -8,9 +8,15 @@ build/
 .venv/
 venv/
 
-# SUMO
+# SUMO runtime outputs (regenerated per simulation run)
 *.log
+*.errorlog
 tripinfo.xml
+tripinfos.xml
+stopinfos.xml
+stats.xml
+edgeData.xml
+vehroutes.xml
 
 # Models
 models/
