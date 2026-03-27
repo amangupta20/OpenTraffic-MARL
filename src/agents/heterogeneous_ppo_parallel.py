@@ -213,11 +213,14 @@ def train_parallel(
     start_metrics_server(port)
     
     wandb_key = os.environ.get("WANDB_API_KEY")
+    has_netrc = pathlib.Path("~/.netrc").expanduser().exists()
+    has_credentials = bool(wandb_key) or has_netrc
+    
     is_sanity = total_timesteps < 1000 or (run_name and run_name.lower().startswith("sanity"))
     
     if is_sanity:
         mode = "disabled"
-    elif not wandb_key:
+    elif not has_credentials:
         mode = "offline"
     else:
         mode = "online"

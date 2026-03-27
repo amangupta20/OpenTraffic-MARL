@@ -15,6 +15,8 @@ services:
       - ./models:/app/models
       - ./tb_logs:/app/tb_logs
       - ./results:/app/results
+      - ~/.netrc:/root/.netrc
+      - ~/.config/wandb:/root/.config/wandb
 
   # ---------------------------------------------------------------
   # Visual demo (sumo-gui streamed via noVNC)

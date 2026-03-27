@@ -376,6 +376,17 @@ Every training run automatically captures:
 | CLI command used | Auto-captured by W&B |
 | Source code snapshot | `save_code=True` |
 
+**W&B Mode Selection (priority order):**
+
+| Condition | Mode |
+|-----------|------|
+| `--timesteps < 1000` or `--run-name sanity*` | `disabled` (no overhead) |
+| `~/.netrc` has `api.wandb.ai` credentials | `online` (preferred — via volume mount) |
+| `WANDB_API_KEY` env var is set | `online` |
+| No credentials found | `offline` (local file only) |
+
+Credentials are injected into the container via `docker-compose.yml` volume mounts (`~/.netrc` → `/root/.netrc`), meaning **no rebuild is needed** after `make wandb-login`.
+
 ### 7.2 Custom Run Labelling
 
 ```bash
