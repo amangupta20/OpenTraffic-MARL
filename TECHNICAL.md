@@ -355,7 +355,7 @@ Due to massive gridlock and vehicle teleportation (~30% teleport rate) at `scale
 | 3 | 0.6 | 60% |
 | 4* | 0.8 | 80% (Eval/Stress) |
 
-The Multi-Agent PPO system uses a `Coordinator` pattern to synchronize independent `PPO.learn()` threads, intercepting `env.reset()` calls to dynamically inject scaling promotions based on training progress (first 15% at Grade 1, next 25% at Grade 2, final 60% at Grade 3).
+The Multi-Agent PPO system uses a multi-processed `SubprocCoordinator` pattern to multiplex actions from independent `PPO.learn()` threads across parallel SUMO worker processes via `multiprocessing.Pipe`. This shared-vectorizer architecture achieves true parallelism, scaling from ~25 FPS to >100 FPS. The Coordinator also intercepts `env.reset()` calls to dynamically inject scaling promotions based on training progress (first 15% at Grade 1, next 25% at Grade 2, final 60% at Grade 3) and synchronizes all parallel workers to the new curriculum scale.
 
 ---
 

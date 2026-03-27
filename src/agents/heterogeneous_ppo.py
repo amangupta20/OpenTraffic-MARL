@@ -51,11 +51,16 @@ class Coordinator:
         self.episodes_completed = 0
         self.total_master_steps = 0
         
+        # FPS tracking
+        self._wall_start = time.time()
+        self._step_count_for_fps = 0
+        
     def _step_master(self):
         """Called by the last agent to reach the step barrier; steps the SUMO simulation."""
         new_obs, global_reward, terminated, truncated, info = self.master_env.step(self.actions)
         
         self.total_master_steps += self.master_env.delta_time
+        self._step_count_for_fps += 1
         
         # Dispatch rewards correctly to agents
         for t in self.tls_ids:
@@ -68,21 +73,33 @@ class Coordinator:
         # Clear actions
         self.actions = {}
         
-        # Log to wandb from master thread hook
+        # FPS + telemetry logging every 100 sim-seconds
         if "step" in info and info["step"] % 100 == 0:
             total_queue = sum(info["per_junction"][t]["queue_length"] for t in self.tls_ids)
+            elapsed = time.time() - self._wall_start
+            fps = self._step_count_for_fps / elapsed if elapsed > 0 else 0
+            
             wandb.log({
                 "env/queue_length": total_queue,
                 "env/wait_time": info["wait_time_total"],
                 "env/reward": sum(self.rewards.values()),
                 "env/scale": info.get("scale", self.master_env.scale),
                 "env/master_step": self.total_master_steps,
+                "perf/fps": fps,
             })
             
-            # Print to stdout occasionally
-            if info["step"] % 300 == 0:
-                print(f"[Master] scale={self.master_env.scale:.1f} queue={total_queue:.0f} "
-                      f"wait={info['wait_time_total']:.0f} reward={sum(self.rewards.values()):.1f}")
+            # Constant output: print every 100 sim-seconds
+            total_reward = sum(self.rewards.values())
+            progress_pct = (self._step_count_for_fps / self.total_timesteps) * 100 if self.total_timesteps > 0 else 0
+            print(
+                f"[{self._step_count_for_fps:>6d}/{self.total_timesteps}] "
+                f"scale={self.master_env.scale:.1f}  "
+                f"fps={fps:.0f}  "
+                f"queue={total_queue:.0f}  "
+                f"wait={info['wait_time_total']:.0f}  "
+                f"reward={total_reward:.1f}  "
+                f"progress={progress_pct:.1f}%"
+            )
 
     def _reset_master(self):
         """Called by the last agent to reach the reset barrier; resets the SUMO simulation."""

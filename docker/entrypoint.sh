@@ -74,8 +74,8 @@ case "$MODE" in
     exec python3 -m src.agents.independent_ppo --compare "$@"
     ;;
   blr-train)
-    echo "[entrypoint] Training independent PPO agents on Bangalore MG Road (Curriculum)"
-    exec python3 -m src.agents.heterogeneous_ppo --train "$@"
+    echo "[entrypoint] Training independent PPO agents on Bangalore MG Road (Curriculum, Parallel MP)"
+    exec python3 -m src.agents.heterogeneous_ppo_parallel --train "$@"
     ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
