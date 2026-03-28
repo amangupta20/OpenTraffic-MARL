@@ -83,8 +83,13 @@ def _collect_episode(
 # Static timer baseline
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _make_static_step_fn(tls_ids: list[str]):
-    """Returns a step function that cycles phases every GREEN_DUR seconds."""
+def _make_static_step_fn(tls_ids: list[str], n_phases: dict[str, int]):
+    """Returns a step function that cycles through ALL phases every GREEN_DUR seconds.
+
+    n_phases: dict mapping tls_id → number of green phases (from action_space.n)
+    Previously this was hard-coded to binary (% 2), which left 4-6 phase junctions
+    permanently stuck cycling only their first two phases.
+    """
     phase_idx: dict[str, int] = {t: 0 for t in tls_ids}
     green_time: dict[str, int] = {t: 0 for t in tls_ids}
 
@@ -93,7 +98,7 @@ def _make_static_step_fn(tls_ids: list[str]):
         for t in tls_ids:
             green_time[t] += DELTA_TIME
             if green_time[t] >= GREEN_DUR:
-                phase_idx[t] = (phase_idx[t] + 1) % 2  # binary phase cycle
+                phase_idx[t] = (phase_idx[t] + 1) % n_phases[t]  # cycle ALL phases
                 green_time[t] = 0
             actions[t] = phase_idx[t]
         return actions
@@ -265,8 +270,13 @@ def run_ctde_compare(port: int = 8000) -> None:
         }
 
     # ── Run all 3 systems ──────────────────────────────────────────────────
+    # Build n_phases from a probe env so static timer cycles ALL phases
+    _probe = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
+    n_phases = {t: int(_probe.action_space.spaces[t].n) for t in tls_ids}
+    _probe.close()
+
     systems = {
-        "Static Timer":       _make_static_step_fn(tls_ids),
+        "Static Timer":       _make_static_step_fn(tls_ids, n_phases),
         "Independent PPO":    _make_indep_ppo_step_fn(tls_ids),
         "CTDE MAPPO":         _make_ctde_step_fn(actors),
     }

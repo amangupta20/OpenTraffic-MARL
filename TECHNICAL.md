@@ -637,14 +637,22 @@ $$\hat{A}_t^i = \sum_{k=0}^{T-t-1} (\gamma \lambda)^k \delta_{t+k}^i, \quad \del
 | Discount factor γ | 0.99 |
 | GAE λ | 0.95 |
 | PPO clip ε | 0.2 |
-| Entropy coefficient | 0.05 |
+| Entropy coef (annealed) | 0.05 → 0.003 |
 | Value coefficient | 0.5 |
 | Actor learning rate | 3×10⁻⁴ |
 | Critic learning rate | 3×10⁻⁴ |
-| Rollout steps N | 1800 |
+| Training episode length | 3600s |
+| Rollout steps N | 720 (sub-episode) |
 | PPO epochs | 10 |
-| Batch size | 300 |
+| Batch size | 90 |
 | Max gradient norm | 0.5 |
+| Eval static timer GREEN_DUR | 30s / all phases |
+
+**Entropy annealing rationale:** A fixed high entropy coefficient (0.05) caused actors to stay near-random through all of training (W&B showed per-agent entropy ≈ 0.77 at step 500k, close to max for small action spaces). Linear decay from 0.05→0.003 preserves early-stage exploration while ensuring actors commit to learned strategies by the end of training.
+
+**Episode length rationale:** Training was previously on 1800s episodes while eval runs 3600s — actors never experienced the dense traffic that builds in the second half of the episode. Training now uses 3600s to match eval. Rollout buffer is set to N=720 (sub-episode) to inject reset diversity into each PPO update.
+
+**Static timer baseline fix:** The comparison step function previously binary-cycled (phase % 2) all junctions regardless of their phase count. Junctions with 3–6 phases were permanently stuck using only 2 of them. The static timer now cycles through all `n_phases[t]` phases from the action space.
 
 ### 9.5 Curriculum
 

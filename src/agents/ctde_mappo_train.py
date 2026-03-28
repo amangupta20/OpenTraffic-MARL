@@ -48,10 +48,13 @@ ENTROPY_COEF = 0.05
 VALUE_COEF   = 0.5
 LR_ACTOR     = 3e-4
 LR_CRITIC    = 3e-4
-N_STEPS      = 1800       # Steps per rollout (5 episodes of 360 decisions)
+N_STEPS      = 720        # Steps per rollout — sub-episode so rollouts see diverse traffic states
 N_EPOCHS     = 10         # PPO update epochs per rollout
-BATCH_SIZE   = 300
+BATCH_SIZE   = 90         # keeps N_STEPS/BATCH_SIZE ratio at 8
 MAX_GRAD_NORM = 0.5
+# Entropy annealing: start high (exploration) → end low (commit to good policy)
+ENTROPY_COEF_START = 0.05
+ENTROPY_COEF_END   = 0.003
 
 # Curriculum: grades for the cleaned (83%-reduced) network
 CURRICULUM = [
@@ -145,6 +148,11 @@ class CTDETrainer:
                 target = scale
         return target
 
+    def _get_entropy_coef(self) -> float:
+        """Linearly anneal entropy coefficient: high early (explore) → low late (exploit)."""
+        progress = min(self.steps_collected / self.total_timesteps, 1.0)
+        return ENTROPY_COEF_START + (ENTROPY_COEF_END - ENTROPY_COEF_START) * progress
+
     # ──────────────────────────────────────────────────────────────────────────
     # PPO update
     # ──────────────────────────────────────────────────────────────────────────
@@ -228,7 +236,8 @@ class CTDETrainer:
                     surr1 = ratio * adv_batch
                     surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv_batch
                     actor_loss = -torch.min(surr1, surr2).mean()
-                    entropy_loss = -ENTROPY_COEF * entropy.mean()
+                    entropy_coef = self._get_entropy_coef()  # annealed
+                    entropy_loss = -entropy_coef * entropy.mean()
                     total_loss = actor_loss + entropy_loss
 
                     self.actor_optims[t].zero_grad()
@@ -266,7 +275,7 @@ class CTDETrainer:
 
         env = make_env(
             "bangalore_corridor", use_gui=False,
-            max_steps=1800, scale=self.current_scale
+            max_steps=3600, scale=self.current_scale
         )
         obs_dict, _ = env.reset()
 
@@ -290,7 +299,7 @@ class CTDETrainer:
                 env.close()
                 env = make_env(
                     "bangalore_corridor", use_gui=False,
-                    max_steps=1800, scale=self.current_scale
+                    max_steps=3600, scale=self.current_scale
                 )
                 obs_dict, _ = env.reset()
 
@@ -369,6 +378,7 @@ class CTDETrainer:
                     "env/scale":            self.current_scale,
                     "perf/fps":             fps,
                     "train/progress_pct":   progress_pct,
+                    "train/entropy_coef":   self._get_entropy_coef(),
                 })
 
                 rollout_rewards = {t: 0.0 for t in self.tls_ids}
