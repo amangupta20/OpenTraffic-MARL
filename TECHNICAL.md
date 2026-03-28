@@ -662,7 +662,8 @@ Same re-calibrated curriculum as Independent PPO training:
 |:-----:|:-------:|:-----------------:|
 | 1 | 0.75 | 0–15% |
 | 2 | 1.50 | 15–40% |
-| 3 | 2.00 | 40–100% |
+| 3 | 1.75 | 40–70% |
+| 4 | 2.00 | 70–100% |
 
 ### 9.6 Evaluation & Comparison
 
@@ -673,7 +674,7 @@ At evaluation time, only the trained actors are loaded — the critic is discard
 2. Independent PPO (Phase 2 weights)
 3. CTDE MAPPO (Phase 3 weights)
 
-All three are run on the same environment configuration (`scale=2.0`, `max_steps=3600`) and a unified comparison plot is generated and uploaded to W&B.
+All three are run on the same environment configuration (`scale=2.0`, `max_steps=1800`) and a unified comparison plot is generated and uploaded to W&B.
 
 ### 9.7 Commands
 

@@ -52,6 +52,8 @@ N_STEPS      = 720        # Steps per rollout — sub-episode so rollouts see di
 N_EPOCHS     = 10         # PPO update epochs per rollout
 BATCH_SIZE   = 90         # keeps N_STEPS/BATCH_SIZE ratio at 8
 MAX_GRAD_NORM = 0.5
+REWARD_CLIP  = 500.0      # per-step reward clip — prevents exponential wait penalty from
+                           # exploding to -millions on gridlock episodes at high scales
 # Entropy annealing: start high (exploration) → end low (commit to good policy)
 ENTROPY_COEF_START = 0.05
 ENTROPY_COEF_END   = 0.003
@@ -60,7 +62,8 @@ ENTROPY_COEF_END   = 0.003
 CURRICULUM = [
     (0.00, 0.75),   # Grade 1: 0–15%  of training
     (0.15, 1.50),   # Grade 2: 15–40%
-    (0.40, 2.00),   # Grade 3: 40–100%
+    (0.40, 1.75),   # Grade 3: 40–70% — bridging step avoids cliff-edge jump to 2.0
+    (0.70, 2.00),   # Grade 4: 70–100%
 ]
 
 
@@ -275,7 +278,7 @@ class CTDETrainer:
 
         env = make_env(
             "bangalore_corridor", use_gui=False,
-            max_steps=3600, scale=self.current_scale
+            max_steps=1800, scale=self.current_scale
         )
         obs_dict, _ = env.reset()
 
@@ -299,7 +302,7 @@ class CTDETrainer:
                 env.close()
                 env = make_env(
                     "bangalore_corridor", use_gui=False,
-                    max_steps=3600, scale=self.current_scale
+                    max_steps=1800, scale=self.current_scale
                 )
                 obs_dict, _ = env.reset()
 
@@ -331,6 +334,10 @@ class CTDETrainer:
 
             for t in self.tls_ids:
                 local_reward = per_j.get(t, {}).get("reward", 0.0)
+                # Clip to guard against exponential wait-penalty explosion on gridlock
+                # episodes — without this, scale=2.0 gridlocks produce rewards of -12M
+                # which corrupt the critic target and destroy the gradient signal.
+                local_reward = max(local_reward, -REWARD_CLIP)
                 self.buffers[t].add(
                     local_obs    = obs_dict[t],
                     global_state = global_state,
