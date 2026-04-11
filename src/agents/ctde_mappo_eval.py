@@ -35,11 +35,12 @@ from src.utils.metrics import start_metrics_server
 MODELS_DIR  = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
 RESULTS_DIR = MODELS_DIR.parent / "results"
 
-# Eval configuration — match end-of-training stress level
-EVAL_SCALE  = 2.0
-MAX_STEPS   = 3600
-DELTA_TIME  = 5
-GREEN_DUR   = 30   # static-timer green phase duration (seconds)
+# Eval configuration — ALIGNED with training (max_steps=1800)
+EVAL_SCALE     = 2.0
+MAX_STEPS      = 1800       # matches training episode length
+DELTA_TIME     = 5
+GREEN_DUR      = 30         # static-timer green phase duration (seconds)
+N_EVAL_EPISODES = 10        # number of episodes to average over for statistical significance
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +80,30 @@ def _collect_episode(
     }
 
 
+def _collect_multi_episode(
+    env,
+    step_fn,
+    n_episodes: int = N_EVAL_EPISODES,
+    max_steps: int = MAX_STEPS,
+) -> dict[str, Any]:
+    """Run n_episodes and return aggregated mean ± std metrics."""
+    all_results = []
+    for ep in range(n_episodes):
+        result = _collect_episode(env, step_fn, max_steps)
+        all_results.append(result)
+
+    # Aggregate
+    keys = ["avg_queue", "avg_wait", "total_reward", "throughput"]
+    agg = {}
+    for k in keys:
+        vals = [r[k] for r in all_results]
+        agg[k]           = float(np.mean(vals))
+        agg[f"{k}_std"]  = float(np.std(vals))
+        agg[f"{k}_vals"] = vals      # raw per-episode data
+    agg["n_episodes"] = n_episodes
+    return agg
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Static timer baseline
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +129,36 @@ def _make_static_step_fn(tls_ids: list[str], n_phases: dict[str, int]):
         return actions
 
     return step_fn
+
+
+def _reset_static_state(tls_ids: list[str], phase_idx, green_time):
+    """Reset the static timer state between episodes."""
+    for t in tls_ids:
+        phase_idx[t] = 0
+        green_time[t] = 0
+
+
+def _make_static_step_fn_resettable(tls_ids: list[str], n_phases: dict[str, int]):
+    """Returns a step function + reset callback for multi-episode static timer eval."""
+    phase_idx: dict[str, int] = {t: 0 for t in tls_ids}
+    green_time: dict[str, int] = {t: 0 for t in tls_ids}
+
+    def step_fn(obs_dict: dict[str, np.ndarray]) -> dict[str, int]:
+        actions = {}
+        for t in tls_ids:
+            green_time[t] += DELTA_TIME
+            if green_time[t] >= GREEN_DUR:
+                phase_idx[t] = (phase_idx[t] + 1) % n_phases[t]
+                green_time[t] = 0
+            actions[t] = phase_idx[t]
+        return actions
+
+    def reset_fn():
+        for t in tls_ids:
+            phase_idx[t] = 0
+            green_time[t] = 0
+
+    return step_fn, reset_fn
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -157,6 +212,36 @@ def _make_ctde_step_fn(actors: dict[str, MAPPOActor]) -> callable:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Multi-episode collection with proper reset handling
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _collect_multi_episode_with_reset(
+    env,
+    step_fn,
+    n_episodes: int = N_EVAL_EPISODES,
+    reset_fn=None,
+) -> dict[str, Any]:
+    """Run n_episodes, calling optional reset_fn before each episode for stateful
+    step functions (e.g. static timer). Returns aggregated mean ± std."""
+    all_results = []
+    for ep in range(n_episodes):
+        if reset_fn is not None:
+            reset_fn()
+        result = _collect_episode(env, step_fn)
+        all_results.append(result)
+
+    keys = ["avg_queue", "avg_wait", "total_reward", "throughput"]
+    agg = {}
+    for k in keys:
+        vals = [r[k] for r in all_results]
+        agg[k]           = float(np.mean(vals))
+        agg[f"{k}_std"]  = float(np.std(vals))
+        agg[f"{k}_vals"] = vals
+    agg["n_episodes"] = n_episodes
+    return agg
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Evaluate (headless)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -169,14 +254,15 @@ def run_ctde_eval(port: int = 8000) -> None:
     env = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
 
     step_fn = _make_ctde_step_fn(actors)
-    results = _collect_episode(env, step_fn)
+    print(f"[CTDE Eval] Running {N_EVAL_EPISODES} episodes (max_steps={MAX_STEPS}, scale={EVAL_SCALE})...")
+    results = _collect_multi_episode(env, step_fn)
     env.close()
 
-    print("\n[CTDE Eval] Results:")
-    print(f"  avg_queue   = {results['avg_queue']:.2f}")
-    print(f"  avg_wait    = {results['avg_wait']:.2f}")
-    print(f"  total_reward= {results['total_reward']:.2f}")
-    print(f"  throughput  = {results['throughput']}")
+    print(f"\n[CTDE Eval] Results ({results['n_episodes']} episodes):")
+    print(f"  avg_queue   = {results['avg_queue']:.2f} ± {results['avg_queue_std']:.2f}")
+    print(f"  avg_wait    = {results['avg_wait']:.2f} ± {results['avg_wait_std']:.2f}")
+    print(f"  total_reward= {results['total_reward']:.2f} ± {results['total_reward_std']:.2f}")
+    print(f"  throughput  = {results['throughput']:.0f} ± {results['throughput_std']:.0f}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -215,13 +301,15 @@ def run_ctde_demo(port: int = 8000) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3-Way comparison
+# 3-Way comparison — multi-episode averaged
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_ctde_compare(port: int = 8000) -> None:
     """
     Run Static Timer → Independent PPO → CTDE MAPPO on identical conditions.
-    Generate 3-way comparison plot and log summary metrics to W&B (CTDE run).
+    Each system runs N_EVAL_EPISODES episodes; results are averaged for
+    statistical significance.  Generates a 3-way comparison plot and logs
+    summary metrics to W&B (CTDE run).
     """
     print("[CTDE Compare] Loading CTDE actors...")
     actors, ctde_meta = CTDETrainer.load_actors(MODELS_DIR)
@@ -247,92 +335,99 @@ def run_ctde_compare(port: int = 8000) -> None:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── Helper: run a full episode and collect per-step data for plotting ──
-    def _run_episode_with_trace(env, step_fn):
-        obs_dict, _ = env.reset()
-        queues, waits, rewards = [], [], []
-        throughput_total = 0
-        while True:
-            actions = step_fn(obs_dict)
-            obs_dict, reward, terminated, _, info = env.step(actions)
-            queues.append(info.get("queue_length", 0))
-            waits.append(info.get("wait_time_total", 0))
-            rewards.append(reward)
-            throughput_total += info.get("throughput", 0)
-            if terminated:
-                break
-        return {
-            "queues": queues, "waits": waits, "rewards": rewards,
-            "avg_queue": float(np.mean(queues)),
-            "avg_wait":  float(np.mean(waits)),
-            "total_reward": float(sum(rewards)),
-            "throughput": throughput_total,
-        }
-
-    # ── Run all 3 systems ──────────────────────────────────────────────────
-    # Build n_phases from a probe env so static timer cycles ALL phases
+    # ── Probe env for phase counts ──────────────────────────────────────────
     _probe = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
     n_phases = {t: int(_probe.action_space.spaces[t].n) for t in tls_ids}
     _probe.close()
 
-    systems = {
-        "Static Timer":       _make_static_step_fn(tls_ids, n_phases),
-        "Independent PPO":    _make_indep_ppo_step_fn(tls_ids),
-        "CTDE MAPPO":         _make_ctde_step_fn(actors),
-    }
+    print(f"\n[CTDE Compare] Config: max_steps={MAX_STEPS}, scale={EVAL_SCALE}, "
+          f"episodes={N_EVAL_EPISODES}")
+    print("="*65)
+
+    # ── Build step functions ────────────────────────────────────────────────
+    static_step_fn, static_reset_fn = _make_static_step_fn_resettable(tls_ids, n_phases)
+
+    systems = [
+        ("Static Timer",    static_step_fn, static_reset_fn),
+        ("Independent PPO", _make_indep_ppo_step_fn(tls_ids), None),
+        ("CTDE MAPPO",      _make_ctde_step_fn(actors), None),
+    ]
     colors = {
         "Static Timer":   "#e74c3c",
         "Independent PPO": "#f39c12",
         "CTDE MAPPO":     "#2ecc71",
     }
 
+    # ── Run all systems ─────────────────────────────────────────────────────
     results = {}
-    for name, step_fn in systems.items():
-        print(f"\n[CTDE Compare] Running: {name} ...")
+    for name, step_fn, reset_fn in systems:
+        print(f"\n[CTDE Compare] Running: {name} ({N_EVAL_EPISODES} episodes)...")
         env = make_env(
             "bangalore_corridor", use_gui=False,
             max_steps=MAX_STEPS, scale=EVAL_SCALE
         )
-        results[name] = _run_episode_with_trace(env, step_fn)
+        results[name] = _collect_multi_episode_with_reset(
+            env, step_fn, N_EVAL_EPISODES, reset_fn
+        )
         env.close()
 
         r = results[name]
-        print(f"  avg_queue={r['avg_queue']:.1f}  avg_wait={r['avg_wait']:.1f}  "
-              f"reward={r['total_reward']:.1f}  throughput={r['throughput']}")
+        print(f"  avg_queue = {r['avg_queue']:6.1f} ± {r['avg_queue_std']:.1f}")
+        print(f"  avg_wait  = {r['avg_wait']:6.1f} ± {r['avg_wait_std']:.1f}")
+        print(f"  reward    = {r['total_reward']:8.1f} ± {r['total_reward_std']:.1f}")
+        print(f"  throughput= {r['throughput']:6.0f} ± {r['throughput_std']:.0f}")
 
-    # ── Generate 3-way comparison plot ────────────────────────────────────
+    # ── Generate 3-way comparison bar plot (mean ± std) ───────────────────
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
-    fig.suptitle(f"3-Way Comparison — Bangalore MG Road (scale={EVAL_SCALE}×)",
-                 fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"3-Way Comparison — Bangalore MG Road (scale={EVAL_SCALE}×, "
+        f"{N_EVAL_EPISODES} episodes)",
+        fontsize=14, fontweight="bold"
+    )
 
-    step_axis = np.arange(len(results["Static Timer"]["queues"])) * DELTA_TIME
+    names = [n for n, _, _ in systems]
+    bar_x = np.arange(len(names))
+    bar_width = 0.5
 
-    for name, res in results.items():
-        c = colors[name]
-        # Trim all traces to same length
-        n = min(len(res["queues"]), len(step_axis))
+    # Queue Length bars
+    q_means = [results[n]["avg_queue"] for n in names]
+    q_stds  = [results[n]["avg_queue_std"] for n in names]
+    bar_colors = [colors[n] for n in names]
+    axes[0, 0].bar(bar_x, q_means, bar_width, yerr=q_stds, color=bar_colors,
+                   alpha=0.85, edgecolor="white", capsize=5)
+    axes[0, 0].set(title="Avg Queue Length", ylabel="Vehicles waiting")
+    axes[0, 0].set_xticks(bar_x)
+    axes[0, 0].set_xticklabels(names, fontsize=9)
 
-        axes[0, 0].plot(step_axis[:n], res["queues"][:n], label=name, color=c, alpha=0.85)
-        axes[0, 1].plot(step_axis[:n], res["waits"][:n],  label=name, color=c, alpha=0.85)
-        axes[1, 0].plot(step_axis[:n], np.cumsum(res["rewards"][:n]), label=name, color=c, alpha=0.85)
+    # Wait Time bars
+    w_means = [results[n]["avg_wait"] for n in names]
+    w_stds  = [results[n]["avg_wait_std"] for n in names]
+    axes[0, 1].bar(bar_x, w_means, bar_width, yerr=w_stds, color=bar_colors,
+                   alpha=0.85, edgecolor="white", capsize=5)
+    axes[0, 1].set(title="Avg Wait Time", ylabel="Wait (s)")
+    axes[0, 1].set_xticks(bar_x)
+    axes[0, 1].set_xticklabels(names, fontsize=9)
 
-    # Bar chart for throughput
-    names = list(results.keys())
-    throughputs = [results[n]["throughput"] for n in names]
-    bar_colors  = [colors[n] for n in names]
-    axes[1, 1].bar(names, throughputs, color=bar_colors, alpha=0.85, edgecolor="white")
-    axes[1, 1].set_ylabel("Total vehicles arrived")
-    axes[1, 1].set_title("Throughput")
-    for spine in axes[1, 1].spines.values():
-        spine.set_visible(False)
+    # Reward bars
+    r_means = [results[n]["total_reward"] for n in names]
+    r_stds  = [results[n]["total_reward_std"] for n in names]
+    axes[1, 0].bar(bar_x, r_means, bar_width, yerr=r_stds, color=bar_colors,
+                   alpha=0.85, edgecolor="white", capsize=5)
+    axes[1, 0].set(title="Total Reward (higher = better)", ylabel="Reward")
+    axes[1, 0].set_xticks(bar_x)
+    axes[1, 0].set_xticklabels(names, fontsize=9)
 
-    axes[0, 0].set(title="Queue Length", ylabel="Vehicles waiting", xlabel="Simulation time (s)")
-    axes[0, 1].set(title="Total Wait Time", ylabel="Cumulative wait (s)", xlabel="Simulation time (s)")
-    axes[1, 0].set(title="Cumulative Reward", ylabel="Reward", xlabel="Simulation time (s)")
+    # Throughput bars
+    t_means = [results[n]["throughput"] for n in names]
+    t_stds  = [results[n]["throughput_std"] for n in names]
+    axes[1, 1].bar(bar_x, t_means, bar_width, yerr=t_stds, color=bar_colors,
+                   alpha=0.85, edgecolor="white", capsize=5)
+    axes[1, 1].set(title="Throughput", ylabel="Total vehicles arrived")
+    axes[1, 1].set_xticks(bar_x)
+    axes[1, 1].set_xticklabels(names, fontsize=9)
 
-    for ax in axes.flat[:3]:
-        ax.legend(fontsize=8)
-        ax.grid(alpha=0.2)
+    for ax in axes.flat:
+        ax.grid(alpha=0.2, axis="y")
         for spine in ax.spines.values():
             spine.set_visible(False)
 
@@ -352,35 +447,44 @@ def run_ctde_compare(port: int = 8000) -> None:
             return 0.0
         return ((ref - val) / abs(ref) * 100) if not higher_is_better else ((val - ref) / abs(ref) * 100)
 
-    summary = {}
+    summary = {"compare/n_eval_episodes": N_EVAL_EPISODES}
     for name in ["Independent PPO", "CTDE MAPPO"]:
         r = results[name]
-        summary[f"compare/{name.replace(' ', '_')}/queue_reduction_pct"] = pct_improve(r["avg_queue"], ref_q)
-        summary[f"compare/{name.replace(' ', '_')}/wait_reduction_pct"]  = pct_improve(r["avg_wait"],  ref_w)
-        summary[f"compare/{name.replace(' ', '_')}/reward_improvement_pct"] = pct_improve(
+        key = name.replace(" ", "_")
+        summary[f"compare/{key}/queue_reduction_pct"] = pct_improve(r["avg_queue"], ref_q)
+        summary[f"compare/{key}/wait_reduction_pct"]  = pct_improve(r["avg_wait"],  ref_w)
+        summary[f"compare/{key}/reward_improvement_pct"] = pct_improve(
             r["total_reward"], ref_r, higher_is_better=True)
-        summary[f"compare/{name.replace(' ', '_')}/throughput"] = r["throughput"]
+        summary[f"compare/{key}/throughput"] = r["throughput"]
 
-    # Raw values for all 3
+    # Raw values for all 3 (mean and std)
     for name in names:
         r = results[name]
         key = name.replace(" ", "_")
-        summary[f"compare/{key}/avg_queue"]    = r["avg_queue"]
-        summary[f"compare/{key}/avg_wait"]     = r["avg_wait"]
-        summary[f"compare/{key}/total_reward"] = r["total_reward"]
+        summary[f"compare/{key}/avg_queue"]         = r["avg_queue"]
+        summary[f"compare/{key}/avg_queue_std"]     = r["avg_queue_std"]
+        summary[f"compare/{key}/avg_wait"]          = r["avg_wait"]
+        summary[f"compare/{key}/avg_wait_std"]      = r["avg_wait_std"]
+        summary[f"compare/{key}/total_reward"]      = r["total_reward"]
+        summary[f"compare/{key}/total_reward_std"]  = r["total_reward_std"]
 
     wandb.log(summary)
     wandb.log({"compare/3way_plot": wandb.Image(str(plot_path))})
 
     # ── Print results table ───────────────────────────────────────────────
-    print("\n" + "="*65)
-    print(f"{'System':<20} {'Avg Queue':>10} {'Avg Wait':>10} {'Reward':>12} {'Throughput':>12}")
-    print("-"*65)
+    print(f"\n{'='*75}")
+    print(f"  {N_EVAL_EPISODES}-Episode Averaged Results  (max_steps={MAX_STEPS}, scale={EVAL_SCALE}×)")
+    print(f"{'='*75}")
+    print(f"{'System':<20} {'Avg Queue':>14} {'Avg Wait':>14} {'Reward':>16} {'Throughput':>14}")
+    print(f"{'-'*75}")
     for name in names:
         r = results[name]
-        print(f"{name:<20} {r['avg_queue']:>10.1f} {r['avg_wait']:>10.1f} "
-              f"{r['total_reward']:>12.1f} {r['throughput']:>12}")
-    print("="*65)
+        print(f"{name:<20} "
+              f"{r['avg_queue']:>6.1f}±{r['avg_queue_std']:<5.1f} "
+              f"{r['avg_wait']:>6.1f}±{r['avg_wait_std']:<5.1f} "
+              f"{r['total_reward']:>8.1f}±{r['total_reward_std']:<5.1f} "
+              f"{r['throughput']:>6.0f}±{r['throughput_std']:<5.0f}")
+    print(f"{'='*75}")
 
     indep_q_imp = summary.get("compare/Independent_PPO/queue_reduction_pct", 0)
     ctde_q_imp  = summary.get("compare/CTDE_MAPPO/queue_reduction_pct", 0)

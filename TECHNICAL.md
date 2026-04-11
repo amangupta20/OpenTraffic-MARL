@@ -669,12 +669,22 @@ Same re-calibrated curriculum as Independent PPO training:
 
 At evaluation time, only the trained actors are loaded — the critic is discarded. Deterministic actions are selected via `argmax` over actor logits.
 
+**Multi-episode averaging:** To eliminate evaluation noise from stochastic traffic spawns,
+each system runs **10 independent episodes** (`N_EVAL_EPISODES=10`). Results are reported
+as mean ± standard deviation for statistical significance.
+
+**Train/eval alignment:** Evaluation uses `max_steps=1800` — identical to the training
+episode length — ensuring the policy is tested on the exact traffic horizon it was
+optimised for.
+
 **3-way comparison** (`make ctde-compare`):
-1. Static Timer baseline
+1. Static Timer baseline (all-phase cycling, `GREEN_DUR=30s`)
 2. Independent PPO (Phase 2 weights)
 3. CTDE MAPPO (Phase 3 weights)
 
-All three are run on the same environment configuration (`scale=2.0`, `max_steps=1800`) and a unified comparison plot is generated and uploaded to W&B.
+All three are run on the same environment configuration (`scale=2.0`, `max_steps=1800`,
+`N_EVAL_EPISODES=10`) and a unified bar-chart comparison plot with error bars is generated
+and uploaded to W&B.
 
 ### 9.7 Commands
 
