@@ -415,6 +415,40 @@ def run_ctde_compare(port: int = 8000) -> None:
     for spine in axes[1, 1].spines.values():
         spine.set_visible(False)
 
+    # Add text overlay with % improvements
+    ref_w = results["Static Timer"]["avg_wait"]
+    ctde_w = results["CTDE MAPPO"]["avg_wait"]
+    indep_w = results["Independent PPO"]["avg_wait"]
+    
+    ref_q = results["Static Timer"]["avg_queue"]
+    ctde_q = results["CTDE MAPPO"]["avg_queue"]
+    indep_q = results["Independent PPO"]["avg_queue"]
+    
+    ctde_q_imp = (ref_q - ctde_q) / max(ref_q, 1e-8) * 100
+    indep_q_imp = (ref_q - indep_q) / max(ref_q, 1e-8) * 100
+    
+    ctde_w_imp = (ref_w - ctde_w) / max(ref_w, 1e-8) * 100
+    indep_w_imp = (ref_w - indep_w) / max(ref_w, 1e-8) * 100
+    
+    ctde_vs_indep_q = (indep_q - ctde_q) / max(indep_q, 1e-8) * 100
+    ctde_vs_indep_w = (indep_w - ctde_w) / max(indep_w, 1e-8) * 100
+    
+    textstr = (
+        f"Highlights vs Static Timer:\n"
+        f" • CTDE MAPPO:      {ctde_q_imp:+.1f}% Queue | {ctde_w_imp:+.1f}% Wait\n"
+        f" • Independent PPO: {indep_q_imp:+.1f}% Queue | {indep_w_imp:+.1f}% Wait\n\n"
+        f"CTDE vs Independent PPO:\n"
+        f" • {ctde_vs_indep_q:+.1f}% Queue | {ctde_vs_indep_w:+.1f}% Wait"
+    )
+    
+    props = dict(boxstyle='round', facecolor='white', alpha=0.85, edgecolor='gray')
+    axes[1, 1].text(0.05, 0.95, textstr, transform=axes[1, 1].transAxes, fontsize=10,
+                    verticalalignment='top', bbox=props, zorder=5)
+                    
+    # Ensure throughput bars don't overlap the text
+    max_tp = max(throughputs)
+    axes[1, 1].set_ylim(0, max_tp * 2.0)  # Double to give headroom for text
+
     axes[0, 0].set(title="Queue Length (Mean)", ylabel="Vehicles waiting", xlabel="Simulation time (s)")
     axes[0, 1].set(title="Total Wait Time (Mean)", ylabel="Cumulative wait (s)", xlabel="Simulation time (s)")
     axes[1, 0].set(title="Cumulative Reward (Mean)", ylabel="Reward", xlabel="Simulation time (s)")
