@@ -54,27 +54,27 @@ def _collect_episode(
 ) -> dict[str, Any]:
     """Run one full episode under step_fn action policy. Returns summary metrics."""
     obs_dict, _ = env.reset()
-    total_queue = 0.0
-    total_wait  = 0.0
-    total_reward = 0.0
+    queues, waits, rewards = [], [], []
     total_throughput = 0
-    n_steps = 0
 
     while True:
         actions = step_fn(obs_dict)
         obs_dict, reward, terminated, _, info = env.step(actions)
-        total_queue      += info.get("queue_length", 0)
-        total_wait       += info.get("wait_time_total", 0)
-        total_reward     += reward
+        queues.append(info.get("queue_length", 0))
+        waits.append(info.get("wait_time_total", 0))
+        rewards.append(reward)
         total_throughput += info.get("throughput", 0)
-        n_steps += 1
         if terminated:
             break
 
+    n_steps = len(queues)
     return {
-        "avg_queue":     total_queue / max(n_steps, 1),
-        "avg_wait":      total_wait / max(n_steps, 1),
-        "total_reward":  total_reward,
+        "queues":        queues,
+        "waits":         waits,
+        "rewards":       rewards,
+        "avg_queue":     float(np.mean(queues)) if n_steps > 0 else 0.0,
+        "avg_wait":      float(np.mean(waits)) if n_steps > 0 else 0.0,
+        "total_reward":  float(sum(rewards)),
         "throughput":    total_throughput,
         "n_steps":       n_steps,
     }
@@ -222,7 +222,7 @@ def _collect_multi_episode_with_reset(
     reset_fn=None,
 ) -> dict[str, Any]:
     """Run n_episodes, calling optional reset_fn before each episode for stateful
-    step functions (e.g. static timer). Returns aggregated mean ± std."""
+    step functions (e.g. static timer). Returns aggregated mean ± std and mean traces."""
     all_results = []
     for ep in range(n_episodes):
         if reset_fn is not None:
@@ -237,6 +237,12 @@ def _collect_multi_episode_with_reset(
         agg[k]           = float(np.mean(vals))
         agg[f"{k}_std"]  = float(np.std(vals))
         agg[f"{k}_vals"] = vals
+        
+    min_steps = min([r["n_steps"] for r in all_results])
+    agg["mean_queues"] = np.mean([r["queues"][:min_steps] for r in all_results], axis=0).tolist()
+    agg["mean_waits"] = np.mean([r["waits"][:min_steps] for r in all_results], axis=0).tolist()
+    agg["mean_rewards"] = np.mean([r["rewards"][:min_steps] for r in all_results], axis=0).tolist()
+    
     agg["n_episodes"] = n_episodes
     return agg
 
@@ -377,7 +383,7 @@ def run_ctde_compare(port: int = 8000) -> None:
         print(f"  reward    = {r['total_reward']:8.1f} ± {r['total_reward_std']:.1f}")
         print(f"  throughput= {r['throughput']:6.0f} ± {r['throughput_std']:.0f}")
 
-    # ── Generate 3-way comparison bar plot (mean ± std) ───────────────────
+    # ── Generate 3-way comparison plot ────────────────────────────────────
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     fig.suptitle(
         f"3-Way Comparison — Bangalore MG Road (scale={EVAL_SCALE}×, "
@@ -386,48 +392,36 @@ def run_ctde_compare(port: int = 8000) -> None:
     )
 
     names = [n for n, _, _ in systems]
-    bar_x = np.arange(len(names))
-    bar_width = 0.5
+    
+    # We use Static Timer's mean trace for the step axis
+    step_axis = np.arange(len(results["Static Timer"]["mean_queues"])) * DELTA_TIME
 
-    # Queue Length bars
-    q_means = [results[n]["avg_queue"] for n in names]
-    q_stds  = [results[n]["avg_queue_std"] for n in names]
-    bar_colors = [colors[n] for n in names]
-    axes[0, 0].bar(bar_x, q_means, bar_width, yerr=q_stds, color=bar_colors,
-                   alpha=0.85, edgecolor="white", capsize=5)
-    axes[0, 0].set(title="Avg Queue Length", ylabel="Vehicles waiting")
-    axes[0, 0].set_xticks(bar_x)
-    axes[0, 0].set_xticklabels(names, fontsize=9)
+    for name in names:
+        res = results[name]
+        c = colors[name]
+        # Trim all traces to same length
+        n = min(len(res["mean_queues"]), len(step_axis))
 
-    # Wait Time bars
-    w_means = [results[n]["avg_wait"] for n in names]
-    w_stds  = [results[n]["avg_wait_std"] for n in names]
-    axes[0, 1].bar(bar_x, w_means, bar_width, yerr=w_stds, color=bar_colors,
-                   alpha=0.85, edgecolor="white", capsize=5)
-    axes[0, 1].set(title="Avg Wait Time", ylabel="Wait (s)")
-    axes[0, 1].set_xticks(bar_x)
-    axes[0, 1].set_xticklabels(names, fontsize=9)
+        axes[0, 0].plot(step_axis[:n], res["mean_queues"][:n], label=name, color=c, alpha=0.85)
+        axes[0, 1].plot(step_axis[:n], res["mean_waits"][:n],  label=name, color=c, alpha=0.85)
+        axes[1, 0].plot(step_axis[:n], np.cumsum(res["mean_rewards"][:n]), label=name, color=c, alpha=0.85)
 
-    # Reward bars
-    r_means = [results[n]["total_reward"] for n in names]
-    r_stds  = [results[n]["total_reward_std"] for n in names]
-    axes[1, 0].bar(bar_x, r_means, bar_width, yerr=r_stds, color=bar_colors,
-                   alpha=0.85, edgecolor="white", capsize=5)
-    axes[1, 0].set(title="Total Reward (higher = better)", ylabel="Reward")
-    axes[1, 0].set_xticks(bar_x)
-    axes[1, 0].set_xticklabels(names, fontsize=9)
+    # Bar chart for throughput
+    throughputs = [results[n]["throughput"] for n in names]
+    bar_colors  = [colors[n] for n in names]
+    axes[1, 1].bar(names, throughputs, color=bar_colors, alpha=0.85, edgecolor="white")
+    axes[1, 1].set_ylabel("Total vehicles arrived")
+    axes[1, 1].set_title("Throughput")
+    for spine in axes[1, 1].spines.values():
+        spine.set_visible(False)
 
-    # Throughput bars
-    t_means = [results[n]["throughput"] for n in names]
-    t_stds  = [results[n]["throughput_std"] for n in names]
-    axes[1, 1].bar(bar_x, t_means, bar_width, yerr=t_stds, color=bar_colors,
-                   alpha=0.85, edgecolor="white", capsize=5)
-    axes[1, 1].set(title="Throughput", ylabel="Total vehicles arrived")
-    axes[1, 1].set_xticks(bar_x)
-    axes[1, 1].set_xticklabels(names, fontsize=9)
+    axes[0, 0].set(title="Queue Length (Mean)", ylabel="Vehicles waiting", xlabel="Simulation time (s)")
+    axes[0, 1].set(title="Total Wait Time (Mean)", ylabel="Cumulative wait (s)", xlabel="Simulation time (s)")
+    axes[1, 0].set(title="Cumulative Reward (Mean)", ylabel="Reward", xlabel="Simulation time (s)")
 
-    for ax in axes.flat:
-        ax.grid(alpha=0.2, axis="y")
+    for ax in axes.flat[:3]:
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.2)
         for spine in ax.spines.values():
             spine.set_visible(False)
 
