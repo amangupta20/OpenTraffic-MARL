@@ -110,10 +110,23 @@ ctde-demo:
 # Number of parallel SUMO environments (default: 4)
 NUM_ENVS ?= 4
 
+# Feudal model to evaluate (default: feudal-exp-v2)
+MODEL ?= feudal-exp-v2
+
 # Train Feudal MARL (Manager + Workers) on Cologne8
 # Usage: make feudal-train ARGS="--run-name foo --timesteps 500000" NUM_ENVS=4
 feudal-train:
 	docker compose run --rm -e MODE=feudal-train agent $(ARGS) --num-envs $(NUM_ENVS)
+
+# Headless eval of Feudal workers on Cologne8
+# Usage: make feudal-eval MODEL=feudal-exp-v2
+feudal-eval:
+	docker compose run --rm -e MODE=feudal-eval agent --evaluate --model $(MODEL) $(ARGS)
+
+# 4-way comparison: Static Timer vs Ind.PPO vs CTDE MAPPO vs Feudal MARL
+# Usage: make feudal-compare MODEL=feudal-exp-v2
+feudal-compare:
+	docker compose run --rm -e MODE=feudal-compare agent --compare --model $(MODEL) $(ARGS)
 
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:

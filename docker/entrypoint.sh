@@ -153,6 +153,18 @@ case "$MODE" in
     echo "[entrypoint] noVNC available at http://localhost:6080"
     exec python3 -m src.agents.ctde_mappo_eval --demo "$@"
     ;;
+  feudal-train)
+    echo "[entrypoint] Training Feudal MARL Hierarchy on Cologne8 corridor"
+    exec python3 -m src.agents.feudal_mappo_train --train "$@"
+    ;;
+  feudal-eval)
+    echo "[entrypoint] Feudal MARL evaluation / 4-way comparison"
+    exec python3 -m src.agents.feudal_eval "$@"
+    ;;
+  feudal-compare)
+    echo "[entrypoint] 4-Way comparison: Static / IndePPO / CTDE / Feudal"
+    exec python3 -m src.agents.feudal_eval "$@"
+    ;;
   *)
     echo "[entrypoint] Unknown MODE=$MODE"
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
@@ -160,6 +172,7 @@ case "$MODE" in
     echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo|blr-dumb-demo"
     echo "             c8-ppo-train"
     echo "             ctde-train|ctde-eval|ctde-compare|ctde-demo"
+    echo "             feudal-train"
     exit 1
     ;;
 esac
