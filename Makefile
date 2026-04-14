@@ -103,6 +103,18 @@ ctde-compare:
 ctde-demo:
 	docker compose run --rm -p 6080:6080 -e MODE=ctde-demo agent $(ARGS)
 
+# ──────────────────────────────────────────────────────────────
+# Phase 4: Feudal MARL (Hierarchical Reinforcement Learning)
+# ──────────────────────────────────────────────────────────────
+
+# Number of parallel SUMO environments (default: 4)
+NUM_ENVS ?= 4
+
+# Train Feudal MARL (Manager + Workers) on Cologne8
+# Usage: make feudal-train ARGS="--run-name foo --timesteps 500000" NUM_ENVS=4
+feudal-train:
+	docker compose run --rm -e MODE=feudal-train agent $(ARGS) --num-envs $(NUM_ENVS)
+
 # Visual demo (sumo-gui streamed via noVNC at http://localhost:6080)
 demo:
 	docker compose --profile demo up demo
