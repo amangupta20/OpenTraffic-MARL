@@ -51,9 +51,11 @@ def _collect_episode(
     env,
     step_fn,       # callable(obs_dict) → actions_dict
     max_steps: int = MAX_STEPS,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Run one full episode under step_fn action policy. Returns summary metrics."""
-    obs_dict, _ = env.reset()
+    reset_kwargs = {"seed": seed} if seed is not None else {}
+    obs_dict, _ = env.reset(**reset_kwargs)
     queues, waits, rewards = [], [], []
     total_throughput = 0
 
@@ -85,11 +87,12 @@ def _collect_multi_episode(
     step_fn,
     n_episodes: int = N_EVAL_EPISODES,
     max_steps: int = MAX_STEPS,
+    base_seed: int = 42,
 ) -> dict[str, Any]:
-    """Run n_episodes and return aggregated mean ± std metrics."""
+    """Run n_episodes with unique seeds per episode and return aggregated mean ± std metrics."""
     all_results = []
     for ep in range(n_episodes):
-        result = _collect_episode(env, step_fn, max_steps)
+        result = _collect_episode(env, step_fn, max_steps, seed=base_seed + ep)
         all_results.append(result)
 
     # Aggregate
@@ -220,14 +223,16 @@ def _collect_multi_episode_with_reset(
     step_fn,
     n_episodes: int = N_EVAL_EPISODES,
     reset_fn=None,
+    base_seed: int = 42,
 ) -> dict[str, Any]:
-    """Run n_episodes, calling optional reset_fn before each episode for stateful
-    step functions (e.g. static timer). Returns aggregated mean ± std and mean traces."""
+    """Run n_episodes with unique seeds per episode, calling optional reset_fn before
+    each episode for stateful step functions (e.g. static timer).
+    Returns aggregated mean ± std and mean traces."""
     all_results = []
     for ep in range(n_episodes):
         if reset_fn is not None:
             reset_fn()
-        result = _collect_episode(env, step_fn)
+        result = _collect_episode(env, step_fn, seed=base_seed + ep)
         all_results.append(result)
 
     keys = ["avg_queue", "avg_wait", "total_reward", "throughput"]

@@ -179,6 +179,13 @@ class SumoBangaloreCorridor(gym.Env):
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         super().reset(seed=seed)
 
+        # Propagate Gymnasium seed to SUMO so traffic demand varies per episode.
+        # If no seed is provided, fall back to "random" for true stochasticity.
+        if seed is not None:
+            self.sumo_seed = seed
+        else:
+            self.sumo_seed = "random"
+
         if self._sumo is not None:
             self._close_sumo()
 
