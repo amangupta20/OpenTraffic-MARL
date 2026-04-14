@@ -30,6 +30,11 @@ def _worker_loop(remote: mp.connection.Connection, parent_remote: mp.connection.
                 # data is a dict: {tls_id: action}
                 obs, reward, terminated, truncated, info = env.step(data)
                 
+                # Piggyback the real global state so the main process can use it
+                # for centralized critics / manager networks without extra RPCs.
+                if hasattr(env, "get_global_state"):
+                    info["global_state"] = env.get_global_state()
+                
                 # Auto-reset logic: if terminated or truncated, we must return the new observation
                 if terminated or truncated:
                     # SB3 VecEnv convention: store terminal obs inside "terminal_observation" 

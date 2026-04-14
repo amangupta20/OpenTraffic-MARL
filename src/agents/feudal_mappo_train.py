@@ -391,23 +391,11 @@ class FeudalTrainer:
                 next_obs, _global_rew, terminated, truncated, info = res
                 done = terminated or truncated
 
-                # Cache global state for next manager step
-                # Reconstruct approximate global state from per_junction queues/waits
-                # (actual get_global_state() is on the subprocess — we use the 5-feature
-                # approximation directly from info which is always available)
-                gs_approx = np.zeros(self.global_dim, dtype=np.float32)
-                for j, tj in enumerate(self.tls_ids):
-                    pj = info.get("per_junction", {}).get(tj, {})
-                    base = j * 5
-                    n_phases = self.act_dims[tj]
-                    gs_approx[base + 0] = pj.get("queue_length", 0.0) / 20.0
-                    gs_approx[base + 1] = pj.get("queue_length", 0.0) / 10.0  # max_lane approx
-                    gs_approx[base + 2] = pj.get("wait_time", 0.0) / 300.0
-                    gs_approx[base + 3] = 0.0  # phase_idx not in info; leave neutral
-                    gs_approx[base + 4] = 0.0
-                cached_gs.append(gs_approx)
+                # Real global state piggybacked from subprocess via info dict
+                gs = info["global_state"]
+                cached_gs.append(gs)
 
-                worker_global_input = np.concatenate([gs_approx, effective_goals[env_idx]])
+                worker_global_input = np.concatenate([gs, effective_goals[env_idx]])
                 w_gs_ts = torch.tensor(worker_global_input, dtype=torch.float32, device=self.device)
 
                 with torch.no_grad():
@@ -420,7 +408,7 @@ class FeudalTrainer:
 
                 if is_manager_step:
                     self.manager_buffer.add(
-                        gs=gs_approx,
+                        gs=gs,
                         a=self.zoh_goals[env_idx],
                         lp=self._mgr_lp[env_idx],
                         r=self._ep_mgr_reward[env_idx],
