@@ -40,3 +40,12 @@ wandb/
 # OS
 .DS_Store
 Thumbs.db
+
+
+.pampa
+pampa.codemap.json
+in-memoria.db
+in-memoria-vectors.db
+
+# Agents
+.agents/
