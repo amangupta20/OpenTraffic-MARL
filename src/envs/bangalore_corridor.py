@@ -280,6 +280,54 @@ class SumoBangaloreCorridor(gym.Env):
             dtype=np.float32,
         )
 
+    def _junction_features(self, tls_id: str) -> np.ndarray:
+        """
+        Extracts a compact 5-dim handcrafted feature vector for a specific junction.
+        Features:
+        0: total_queue (normalized / 20.0)
+        1: max_lane_queue (normalized / 10.0)
+        2: mean_wait_time (normalized / 300.0s)
+        3: phase_index_norm (idx / (n_phases - 1))
+        4: time_since_switch_norm (time / max_steps)
+        """
+        queues = []
+        waits = []
+        for lane in self.tls_incoming_lanes[tls_id]:
+            try:
+                queues.append(float(self._sumo.lane.getLastStepHaltingNumber(lane)))
+                waits.append(float(self._sumo.lane.getWaitingTime(lane)))
+            except Exception:
+                queues.append(0.0)
+                waits.append(0.0)
+
+        total_queue = sum(queues) / 20.0  # Normalize around 20 vehicles
+        max_queue = max(queues) if queues else 0.0
+        max_queue = max_queue / 10.0  # Normalize around 10 vehicles
+        
+        mean_wait = (sum(waits) / len(waits)) if waits else 0.0
+        mean_wait = mean_wait / 300.0  # Normalize around 300s (5 mins)
+        
+        n_phases = len(self.tls_phases[tls_id])
+        phase_idx = float(self._current_green_phase_idx.get(tls_id, 0.0))
+        phase_norm = phase_idx / max(1, n_phases - 1)
+        
+        time_norm = float(self._time_since_switch.get(tls_id, 0.0)) / float(self.max_steps)
+
+        return np.array(
+            [total_queue, max_queue, mean_wait, phase_norm, time_norm],
+            dtype=np.float32,
+        )
+
+    def get_global_state(self) -> np.ndarray:
+        """
+        Constructs a compact global state vector by concatenating the 5-dim feature
+        vectors of all junctions in a fixed deterministic order.
+        Returns:
+            np.ndarray of shape (5 * n_junctions,)
+        """
+        features_list = [self._junction_features(tls_id) for tls_id in self.tls_ids]
+        return np.concatenate(features_list).astype(np.float32)
+
     def _junction_queue(self, tls_id: str) -> float:
         total = 0.0
         for lane in self.tls_incoming_lanes[tls_id]:

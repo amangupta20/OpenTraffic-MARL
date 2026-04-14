@@ -229,20 +229,3 @@ class MAPPORolloutBuffer:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
-def build_global_state(
-    obs_dict: dict[str, np.ndarray],
-    tls_ids: list[str],
-    max_obs_dim: int,
-) -> np.ndarray:
-    """
-    Concatenate all agents' observations into one global state vector,
-    zero-padding each obs to max_obs_dim to handle heterogeneous dims.
-    Shape: (N * max_obs_dim,)
-    """
-    parts = []
-    for tls_id in tls_ids:
-        obs = obs_dict[tls_id]
-        pad = max_obs_dim - len(obs)
-        parts.append(np.concatenate([obs, np.zeros(pad, dtype=np.float32)]))
-    return np.concatenate(parts)

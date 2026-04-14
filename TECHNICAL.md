@@ -585,12 +585,19 @@ Output: action logits (Categorical distribution over green phases)
 **Shared Central Critic** (`MAPPOCritic`) — shared trunk, per-agent output heads:
 
 ```
-Input: global_state s = concat(pad(o_1, max_d), ..., pad(o_N, max_d))
-       where max_d = max obs_dim across all junctions
-       → global_dim = N × max_d  (5 junctions × 16 = 80)
+Input: global_state s = concat(f_1, f_2, ..., f_N)
+       where f_i is a handcrafted 5-dim vector for junction i.
+       → global_dim = N × 5  (5 junctions × 5 = 25)
+
+       The 5 features per junction are:
+       1: total_queue (normalized / 20.0)
+       2: max_lane_queue (normalized / 10.0)
+       3: mean_wait_time (normalized / 300.0s)
+       4: phase_index_norm (idx / (n_phases - 1))
+       5: time_since_switch_norm (time / max_steps)
 
   Shared Trunk (14,528 params):
-    → Linear(80, 128) → Tanh
+    → Linear(25, 128) → Tanh
     → Linear(128, 64) → Tanh
     → features  (dim=64)
 
@@ -600,10 +607,10 @@ Input: global_state s = concat(pad(o_1, max_d), ..., pad(o_N, max_d))
 
 **Why per-agent heads?** Junctions differ enormously in reward scale — a 5-way complex junction accumulates ~10× more reward signal per step than a T-junction. A single output head trained on their average target diverges (see: `critic_loss=816` in early runs). Per-agent heads let each junction calibrate its own value scale while still sharing the global-state representation in the trunk.
 
-**Heterogeneous obs handling:** Each agent's observation is **zero-padded** to `max_obs_dim` before concatenation. This allows a single fixed-size Critic trunk to handle junctions of different topologies without replication.
+**Heterogeneous obs handling:** The actors still use diverse 5-to-16-dim local observations. The central critic avoids padding the raw heterogeneous observations by relying on the handcrafted 5-dim signal per junction, dramatically reducing input noise compared to raw 80-dim vectors.
 
-| Junction ID | Type | obs_dim | n_actions |
-|-------------|------|--------:|----------:|
+| Junction ID | Type | local obs_dim | n_actions |
+|-------------|------|--------------:|----------:|
 | `11854316015` | T-junction | 5 | 2 |
 | `cluster_...#8more` | 5-way complex | 16 | 6 |
 | `cluster_...#9more` | 5-way complex | 16 | 6 |

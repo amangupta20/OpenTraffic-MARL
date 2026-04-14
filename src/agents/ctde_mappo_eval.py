@@ -28,7 +28,7 @@ import wandb
 from stable_baselines3 import PPO
 
 from src.envs import make_env
-from src.agents.mappo_networks import MAPPOActor, build_global_state
+from src.agents.mappo_networks import MAPPOActor
 from src.agents.ctde_mappo_train import CTDETrainer
 from src.utils.metrics import start_metrics_server
 

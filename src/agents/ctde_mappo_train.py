@@ -32,7 +32,6 @@ from src.agents.mappo_networks import (
     MAPPOActor,
     MAPPOCritic,
     MAPPORolloutBuffer,
-    build_global_state,
 )
 from src.utils.metrics import start_metrics_server
 
@@ -106,7 +105,8 @@ class CTDETrainer:
         _probe.close()
 
         self.max_obs_dim = max(self.obs_dims.values())
-        self.global_dim  = self.max_obs_dim * len(self.tls_ids)
+        _sample_gs = _probe.get_global_state()
+        self.global_dim = _sample_gs.shape[0]
 
         print(f"[CTDE] {len(self.tls_ids)} junctions | global_dim={self.global_dim}")
         for t in self.tls_ids:
@@ -307,7 +307,7 @@ class CTDETrainer:
                 obs_dict, _ = env.reset()
 
             # ── Rollout collection ─────────────────────────────────────────
-            global_state = build_global_state(obs_dict, self.tls_ids, self.max_obs_dim)
+            global_state = env.get_global_state()
 
             actions_dict: dict[str, int] = {}
             log_probs_dict: dict[str, float] = {}
