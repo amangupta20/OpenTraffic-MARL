@@ -121,12 +121,16 @@ case "$MODE" in
     echo "[entrypoint] noVNC available at http://localhost:6080"
     exec python3 -m src.agents.heterogeneous_ppo_eval --static-demo "$@"
     ;;
+  c8-ppo-train)
+    echo "[entrypoint] Training independent PPO agents on Cologne8 (Curriculum, Parallel MP)"
+    exec python3 -m src.agents.cologne8_ppo_parallel --train "$@"
+    ;;
   ctde-train)
-    echo "[entrypoint] Training CTDE MAPPO agents on Bangalore MG Road"
+    echo "[entrypoint] Training CTDE MAPPO agents on Cologne8 corridor"
     exec python3 -m src.agents.ctde_mappo_train --train "$@"
     ;;
   ctde-eval)
-    echo "[entrypoint] Evaluating CTDE MAPPO agents (decentralized) on Bangalore MG Road"
+    echo "[entrypoint] Evaluating CTDE MAPPO agents (decentralized) on Cologne8 corridor"
     exec python3 -m src.agents.ctde_mappo_eval --evaluate "$@"
     ;;
   ctde-compare)
@@ -134,7 +138,7 @@ case "$MODE" in
     exec python3 -m src.agents.ctde_mappo_eval --compare "$@"
     ;;
   ctde-demo)
-    echo "[entrypoint] Starting CTDE visual demo — Bangalore MG Road (sumo-gui via noVNC)"
+    echo "[entrypoint] Starting CTDE visual demo — Cologne8 corridor (sumo-gui via noVNC)"
 
     Xvfb :99 -screen 0 1280x720x24 &
     export DISPLAY=:99
@@ -154,6 +158,7 @@ case "$MODE" in
     echo "  Available: dumb|train|evaluate|compare|demo|wandb-login"
     echo "             grid-eval|grid-static|grid-compare|grid-demo"
     echo "             blr-train|blr-eval|blr-static|blr-compare|blr-demo|blr-dumb-demo"
+    echo "             c8-ppo-train"
     echo "             ctde-train|ctde-eval|ctde-compare|ctde-demo"
     exit 1
     ;;

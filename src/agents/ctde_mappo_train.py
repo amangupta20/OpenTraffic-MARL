@@ -1,5 +1,5 @@
 """
-CTDE (Centralized Training, Decentralized Execution) training for Bangalore corridor.
+CTDE (Centralized Training, Decentralized Execution) training for Cologne8 corridor.
 
 Algorithm: MAPPO — Multi-Agent PPO with a shared centralized critic.
   - Training: Central Critic sees global state (all agents' obs concatenated).
@@ -9,7 +9,7 @@ Architecture:
   - N heterogeneous Actors  (one per junction, separate weights, local obs input)
   - 1 shared Central Critic (global state = zero-padded concat of all obs)
 
-Curriculum: 0.75 → 1.5 → 2.0 (re-calibrated for 83%-reduced cleaned network)
+Curriculum: 0.6 → 0.8 → 1.0
 
 Usage:
   docker compose run --rm -e MODE=ctde-train agent --timesteps 500000
@@ -47,9 +47,9 @@ ENTROPY_COEF = 0.05
 VALUE_COEF   = 0.5
 LR_ACTOR     = 3e-4
 LR_CRITIC    = 3e-4
-N_STEPS      = 720        # Steps per rollout — sub-episode so rollouts see diverse traffic states
+N_STEPS      = 480        # Steps per rollout — sub-episode so rollouts see diverse traffic states
 N_EPOCHS     = 10         # PPO update epochs per rollout
-BATCH_SIZE   = 90         # keeps N_STEPS/BATCH_SIZE ratio at 8
+BATCH_SIZE   = 60         # keeps N_STEPS/BATCH_SIZE ratio at 8
 MAX_GRAD_NORM = 0.5
 REWARD_CLIP  = 500.0      # per-step reward clip — prevents exponential wait penalty from
                            # exploding to -millions on gridlock episodes at high scales
@@ -57,12 +57,11 @@ REWARD_CLIP  = 500.0      # per-step reward clip — prevents exponential wait p
 ENTROPY_COEF_START = 0.05
 ENTROPY_COEF_END   = 0.003
 
-# Curriculum: grades for the cleaned (83%-reduced) network
+# Curriculum: grades for the Cologne8 network
 CURRICULUM = [
-    (0.00, 0.75),   # Grade 1: 0–15%  of training
-    (0.15, 1.50),   # Grade 2: 15–40%
-    (0.40, 1.75),   # Grade 3: 40–70% — bridging step avoids cliff-edge jump to 2.0
-    (0.70, 2.00),   # Grade 4: 70–100%
+    (0.00, 0.60),   # Grade 1
+    (0.15, 0.80),   # Grade 2
+    (0.40, 1.00),   # Grade 3
 ]
 
 
@@ -72,7 +71,7 @@ CURRICULUM = [
 
 class CTDETrainer:
     """
-    Manages the MAPPO training loop on the Bangalore corridor:
+    Manages the MAPPO training loop on the Cologne8 corridor:
     - Runs rollouts in a single SUMO environment (libsumo, headless)
     - Computes GAE with the centralized critic for each agent
     - Updates actors + critic via PPO clipped surrogate loss
@@ -93,7 +92,7 @@ class CTDETrainer:
 
         # ── Discover network topology ──────────────────────────────────────
         print("[CTDE] Discovering network topology...")
-        _probe = make_env("bangalore_corridor", use_gui=False, max_steps=1800, scale=0.75)
+        _probe = make_env("cologne8_corridor", use_gui=False, max_steps=3600, scale=0.6)
         self.tls_ids: list[str] = _probe.tls_ids
         self.obs_dims: dict[str, int] = {
             t: _probe.observation_space.spaces[t].shape[0] for t in self.tls_ids
@@ -135,7 +134,7 @@ class CTDETrainer:
         }
 
         # ── Curriculum + stats ─────────────────────────────────────────────
-        self.current_scale = 0.75
+        self.current_scale = 0.6
         self.steps_collected = 0
         self._wall_start = time.time()
 
@@ -277,8 +276,8 @@ class CTDETrainer:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
         env = make_env(
-            "bangalore_corridor", use_gui=False,
-            max_steps=1800, scale=self.current_scale
+            "cologne8_corridor", use_gui=False,
+            max_steps=3600, scale=self.current_scale
         )
         obs_dict, _ = env.reset()
 
@@ -301,8 +300,8 @@ class CTDETrainer:
                 print(f"{'='*55}")
                 env.close()
                 env = make_env(
-                    "bangalore_corridor", use_gui=False,
-                    max_steps=1800, scale=self.current_scale
+                    "cologne8_corridor", use_gui=False,
+                    max_steps=3600, scale=self.current_scale
                 )
                 obs_dict, _ = env.reset()
 
@@ -475,7 +474,7 @@ class CTDETrainer:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CTDE MAPPO trainer — Bangalore corridor")
+    parser = argparse.ArgumentParser(description="CTDE MAPPO trainer — Cologne8 corridor")
     parser.add_argument("--train",      action="store_true")
     parser.add_argument("--timesteps",  type=int, default=500_000)
     parser.add_argument("--run-name",   type=str, default="ctde-mappo")

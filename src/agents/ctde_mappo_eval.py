@@ -1,5 +1,5 @@
 """
-CTDE MAPPO Evaluation, Demo & 3-Way Comparison — Bangalore MG Road.
+CTDE MAPPO Evaluation, Demo & 3-Way Comparison — Cologne8 RESCO.
 
 Modes:
   --evaluate : Decentralized eval (actors only, no critic)
@@ -35,10 +35,10 @@ from src.utils.metrics import start_metrics_server
 MODELS_DIR  = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
 RESULTS_DIR = MODELS_DIR.parent / "results"
 
-# Eval configuration — ALIGNED with training (max_steps=1800)
-EVAL_SCALE     = 2.0
-MAX_STEPS      = 1800       # matches training episode length
-DELTA_TIME     = 5
+# Eval configuration — ALIGNED with training (max_steps=3600)
+EVAL_SCALE     = 1.0
+MAX_STEPS      = 3600       # matches training episode length
+DELTA_TIME     = 15
 GREEN_DUR      = 30         # static-timer green phase duration (seconds)
 N_EVAL_EPISODES = 10        # number of episodes to average over for statistical significance
 
@@ -173,7 +173,7 @@ def _make_indep_ppo_step_fn(tls_ids: list[str]) -> callable:
     models: dict[str, PPO] = {}
     missing = []
     for t in tls_ids:
-        path = MODELS_DIR / f"ppo_blr_parallel_{t}.zip"
+        path = MODELS_DIR / f"ppo_c8_parallel_{t}.zip"
         if path.exists():
             models[t] = PPO.load(str(path), device="cpu")
         else:
@@ -182,7 +182,7 @@ def _make_indep_ppo_step_fn(tls_ids: list[str]) -> callable:
     if missing:
         raise FileNotFoundError(
             "Independent PPO models not found:\n" + "\n".join(f"  {p}" for p in missing) +
-            "\n  Run: make blr-train ARGS='--timesteps 500000'"
+            "\n  Run: make c8-ppo-train ARGS='--timesteps 500000'"
         )
 
     def step_fn(obs_dict: dict[str, np.ndarray]) -> dict[str, int]:
@@ -262,7 +262,7 @@ def run_ctde_eval(port: int = 8000) -> None:
     tls_ids = meta["tls_ids"]
 
     start_metrics_server(port)
-    env = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
+    env = make_env("cologne8_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
 
     step_fn = _make_ctde_step_fn(actors)
     print(f"[CTDE Eval] Running {N_EVAL_EPISODES} episodes (max_steps={MAX_STEPS}, scale={EVAL_SCALE})...")
@@ -287,7 +287,7 @@ def run_ctde_demo(port: int = 8000) -> None:
 
     start_metrics_server(port)
     env = make_env(
-        "bangalore_corridor", use_gui=True,
+        "cologne8_corridor", use_gui=True,
         max_steps=MAX_STEPS, scale=EVAL_SCALE, gui_delay=150
     )
 
@@ -347,7 +347,7 @@ def run_ctde_compare(port: int = 8000) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Probe env for phase counts ──────────────────────────────────────────
-    _probe = make_env("bangalore_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
+    _probe = make_env("cologne8_corridor", use_gui=False, max_steps=MAX_STEPS, scale=EVAL_SCALE)
     n_phases = {t: int(_probe.action_space.spaces[t].n) for t in tls_ids}
     _probe.close()
 
@@ -374,7 +374,7 @@ def run_ctde_compare(port: int = 8000) -> None:
     for name, step_fn, reset_fn in systems:
         print(f"\n[CTDE Compare] Running: {name} ({N_EVAL_EPISODES} episodes)...")
         env = make_env(
-            "bangalore_corridor", use_gui=False,
+            "cologne8_corridor", use_gui=False,
             max_steps=MAX_STEPS, scale=EVAL_SCALE
         )
         results[name] = _collect_multi_episode_with_reset(
@@ -391,7 +391,7 @@ def run_ctde_compare(port: int = 8000) -> None:
     # ── Generate 3-way comparison plot ────────────────────────────────────
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     fig.suptitle(
-        f"3-Way Comparison — Bangalore MG Road (scale={EVAL_SCALE}×, "
+        f"3-Way Comparison — Cologne8 RESCO (scale={EVAL_SCALE}×, "
         f"{N_EVAL_EPISODES} episodes)",
         fontsize=14, fontweight="bold"
     )
@@ -537,7 +537,7 @@ def run_ctde_compare(port: int = 8000) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CTDE MAPPO evaluation — Bangalore corridor")
+    parser = argparse.ArgumentParser(description="CTDE MAPPO evaluation — Cologne8 corridor")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--evaluate", action="store_true", help="Headless eval of CTDE actors")
     group.add_argument("--demo",     action="store_true", help="Visual GUI demo of CTDE actors")

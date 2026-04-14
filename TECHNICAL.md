@@ -318,48 +318,45 @@ Agents share weights but act independently — no communication between junction
 
 ---
 
-## 7. Stage 3: Bangalore MG Road — Real-World Corridor
+## 7. Stage 3: Cologne8 RESCO Benchmark — Independent PPO
 
 ### 7.1 Network Topology
 
-Real-world traffic network extracted from OpenStreetMap (OSM) representing the MG Road / Dickenson Road corridor in Bangalore, India.
+The Cologne8 network is a traffic management benchmark from the RESCO (Reinforcement Learning Benchmarks for Traffic Signal Control) suite. It consists of 8 closely coupled, signalized intersections in a busy corridor, natively emphasizing the "green wave" and corridor coordination problems.
 
 | Parameter | Value |
 |-----------|-------|
-| Corridor | MG Road & Dickenson Road, Bangalore |
-| Junctions Controlled | 5 (J1 through J5) |
-| Total Controlled Lanes | 390 |
-| Total Trip Demand | ~1855 inserted trips over 1800s (at `scale=1.0`) |
-| Transport Modes | Passenger, Pedestrian, Bike, Bus, Truck, Motorcycle |
+| Corridor | 8 coordinated intersections (Cologne, Germany) |
+| Junctions Controlled | 8 (named dynamically via clustering) |
+| Transport Modes | Passenger |
 
-### 7.2 Heterogeneous Agents
+### 7.2 Multi-Agent Execution
 
-Unlike the synthetic Grid and Single intersection, the Bangalore network features highly irregular junction topologies.
+Each junction gets its own uniquely-sized PPO model (`MlpPolicy`). The action space represents **"target green phase index"**. If the agent selects an action different from its current phase, a mandatory 5-second yellow transition is injected. Additionally, a **15-second minimum green phase** constraint is strictly enforced to maintain realistic physical constraints and the Markov property.
 
-| Alias | Junction ID | Controlled? | Ext. Lanes | Green Phases | Obs Dim | Action Space |
-|:-----:|-------------|:-----------:|:----------:|:------------:|:-------:|:------------:|
-| J1 | `11854316015` | ✅ | 3 | 1 | 5 | Discrete(1) |
-| J2 | `cluster_...#8more` | ✅ | 12 | 3 | 14 | Discrete(3) |
-| J3 | `cluster_...#9more` | ✅ | 14 | 3 | 16 | Discrete(3) |
-| J4 | `cluster_...#6more` | ✅ | 9 | 3 | 11 | Discrete(3) |
-| J5 | `cluster_...#7more` | ✅ | 8 | 2 | 10 | Discrete(2) |
-
-Each junction gets its own uniquely-sized PPO model (`MlpPolicy`). The action space represents **"target green phase index"**. If the agent selects an action different from its current phase, a mandatory 5-second yellow transition is injected.
+| Junction Index | Valid Phases | Obs Dim | Action Space |
+|:-----:|:------------:|:-------:|:------------:|
+| 0 | 4 | 8 | Discrete(4) |
+| 1 | 2 | 6 | Discrete(2) |
+| 2 | 3 | 5 | Discrete(3) |
+| 3 | 4 | 8 | Discrete(4) |
+| 4 | 3 | 6 | Discrete(3) |
+| 5 | 2 | 4 | Discrete(2) |
+| 6 | 3 | 6 | Discrete(3) |
+| 7 | 4 | 6 | Discrete(4) |
 
 ### 7.3 Curriculum Learning
 
-After filtering out internal service/parking trips (83% total trip reduction), the effective corridor load is significantly reduced. The curriculum is **re-calibrated** to reflect realistic stress levels on the cleaned network:
+The training is structured using curriculum learning to smoothly ramp up the difficulty:
 
-| Grade | `scale` | Effective Density | Description |
+| Grade | `scale` | Progress threshold | Description |
 |:-----:|:-------:|:-----------------:|-------------|
-| 1 | 0.75 | ~75% of cleaned volume | Foundational: green means go, queue clearing |
-| 2 | 1.50 | ~150% of cleaned volume | Sustained pressure, multi-junction spillback |
-| 3 | 2.00 | 2× cleaned volume | Adversarial stress: proven stable in demo |
-| Eval | 2.00 | 2× cleaned volume | Evaluation and comparison benchmark |
+| 1 | 0.60 | 0–15% | Foundational: clearing light traffic |
+| 2 | 0.80 | 15–40% | Moderate pressure, queue management |
+| 3 | 1.00 | 40–100% | Full RESCO benchmark demand |
+| Eval | 1.00 | — | Evaluation benchmark |
 
-> **Why start at 0.75?** At `scale=0.2` on the cleaned network, the corridor is almost empty — agents get a flat reward signal and learn nothing. The old curriculum (0.2→0.4→0.6) was calibrated for the unfiltered network where those scales created moderate congestion. After removing 83% of trips, 0.75× cleaned volume is equivalent in difficulty to ~0.14× unfiltered volume — dense enough to create meaningful queues but not immediately gridlocked.
-
-The Multi-Agent PPO system uses a multi-processed `SubprocCoordinator` pattern to multiplex actions from independent `PPO.learn()` threads across parallel SUMO worker processes via `multiprocessing.Pipe`. This shared-vectorizer architecture achieves true parallelism, scaling from ~25 FPS to >100 FPS. The Coordinator also intercepts `env.reset()` calls to dynamically inject scaling promotions based on training progress (first 15% at Grade 1, next 25% at Grade 2, final 60% at Grade 3) and synchronizes all parallel workers to the new curriculum scale.
+The Multi-Agent PPO system uses a multi-processed `SubprocCoordinator` pattern to multiplex actions from independent `PPO.learn()` threads across parallel SUMO worker processes via `multiprocessing.Pipe`.
 
 ---
 
@@ -564,7 +561,7 @@ marl/
 
 ### 9.1 Overview
 
-Phase 3 implements **Centralized Training, Decentralized Execution (CTDE)** using MAPPO (Multi-Agent PPO). It is the current academic state-of-the-art for cooperative MARL and serves as a direct comparison against Independent PPO (Phase 2).
+Phase 3 implements **Centralized Training, Decentralized Execution (CTDE)** using MAPPO (Multi-Agent PPO) on the Cologne8 benchmark. It serves as a direct comparison against Independent PPO (Stage 3).
 
 **Core principle:**
 - **Training** — A shared Central Critic observes the full global state (all agents' observations concatenated) and produces a better value estimate for computing advantages.
@@ -587,7 +584,7 @@ Output: action logits (Categorical distribution over green phases)
 ```
 Input: global_state s = concat(f_1, f_2, ..., f_N)
        where f_i is a handcrafted 5-dim vector for junction i.
-       → global_dim = N × 5  (5 junctions × 5 = 25)
+       → global_dim = 8 junctions × 5 = 40
 
        The 5 features per junction are:
        1: total_queue (normalized / 20.0)
@@ -596,26 +593,18 @@ Input: global_state s = concat(f_1, f_2, ..., f_N)
        4: phase_index_norm (idx / (n_phases - 1))
        5: time_since_switch_norm (time / max_steps)
 
-  Shared Trunk (14,528 params):
-    → Linear(25, 128) → Tanh
+  Shared Trunk:
+    → Linear(40, 128) → Tanh
     → Linear(128, 64) → Tanh
     → features  (dim=64)
 
-  Per-Agent Heads (195 params, one per junction):
+  Per-Agent Heads (8 heads, one per junction):
     → Linear(64, 1) for agent i  →  V_i(s)  (scalar per agent)
 ```
 
-**Why per-agent heads?** Junctions differ enormously in reward scale — a 5-way complex junction accumulates ~10× more reward signal per step than a T-junction. A single output head trained on their average target diverges (see: `critic_loss=816` in early runs). Per-agent heads let each junction calibrate its own value scale while still sharing the global-state representation in the trunk.
+**Why per-agent heads?** Junctions differ enormously in reward scale. A single output head trained on their average target diverges. Per-agent heads let each junction calibrate its own value scale while still sharing the global-state representation in the trunk.
 
-**Heterogeneous obs handling:** The actors still use diverse 5-to-16-dim local observations. The central critic avoids padding the raw heterogeneous observations by relying on the handcrafted 5-dim signal per junction, dramatically reducing input noise compared to raw 80-dim vectors.
-
-| Junction ID | Type | local obs_dim | n_actions |
-|-------------|------|--------------:|----------:|
-| `11854316015` | T-junction | 5 | 2 |
-| `cluster_...#8more` | 5-way complex | 16 | 6 |
-| `cluster_...#9more` | 5-way complex | 16 | 6 |
-| `cluster_...#6more` | 4-way | 13 | 6 |
-| `cluster_...#7more` | 3-way | 8 | 3 |
+**Heterogeneous obs handling:** The central critic avoids padding raw heterogeneous observations by relying on the handcrafted 5-dim signal per junction, dramatically reducing input noise compared to raw padded vectors.
 
 ### 9.3 Loss Functions
 
@@ -667,10 +656,9 @@ Same re-calibrated curriculum as Independent PPO training:
 
 | Grade | `scale` | Progress threshold |
 |:-----:|:-------:|:-----------------:|
-| 1 | 0.75 | 0–15% |
-| 2 | 1.50 | 15–40% |
-| 3 | 1.75 | 40–70% |
-| 4 | 2.00 | 70–100% |
+| 1 | 0.60 | 0–15% |
+| 2 | 0.80 | 15–40% |
+| 3 | 1.00 | 40–100% |
 
 ### 9.6 Evaluation & Comparison
 

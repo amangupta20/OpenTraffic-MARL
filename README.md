@@ -71,37 +71,24 @@ make grid-compare ARGS="--run-name zero-shot-baseline"
 make grid-demo
 ```
 
-## Stage 3: Bangalore MG Road Corridor — Independent PPO
+## Stage 3: Cologne8 RESCO Benchmark — Independent PPO
 
-Train the heterogeneous multi-agent reinforcement learning system on the Bangalore MG Road network with Curriculum Learning (starting from 0.75x scale):
+Train the multi-agent reinforcement learning system on the Cologne8 benchmark network with Curriculum Learning (starting from 0.6x scale):
 
 ```bash
-# Train heterogeneous PPO agents on the Bangalore Corridor (starts at 0.75x scale)
-make blr-train ARGS="--run-name bangalore-curriculum --timesteps 500000"
-
-# Run comparison: static timer vs trained PPO → results logged to the SAME W&B run
-make blr-compare
-
-# Visual demo (sumo-gui streamed at http://localhost:6080)
-make blr-demo
-
-# Headless evaluate only (no comparison)
-make blr-eval
+# Train independent PPO agents on Cologne8 (Curriculum: 0.6x, 0.8x, 1.0x)
+make c8-ppo-train ARGS="--run-name cologne-ppo --timesteps 500000"
 ```
 
-Model weights are automatically uploaded as a versioned W&B Artifact (`blr-ppo-models-<run-name>`) at the end of training.  
-Running `make blr-compare` resumes the original training run so the comparison plot and metrics appear on the **same W&B run page**.
+Model weights are automatically uploaded as a versioned W&B Artifact (`c8-ppo-models-<run-name>`) at the end of training.  
 
 
 ## Phase 3: CTDE MAPPO Architecture
 
-Train the Centralized Training, Decentralized Execution (CTDE) architecture on the Bangalore corridor. This features a shared global critic and decentralized per-junction actors.
+Train the Centralized Training, Decentralized Execution (CTDE) architecture on the Cologne8 network. This features a shared global critic and decentralized per-junction actors.
 
 ```bash
-# Pre-filter the network trips to prevent centre gridlocks (run once)
-make blr-filter-trips DENSITY=0.45
-
-# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0, N_STEPS=1800, Batch=300)
+# Train CTDE MAPPO agents (Curriculum 0.6x, 0.8x, 1.0x)
 make ctde-train ARGS="--run-name ctde-run-1 --timesteps 500000"
 
 # 3-way comparison plot (Static vs IndePPO vs CTDE) — logs to the CTDE W&B run

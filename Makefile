@@ -1,4 +1,4 @@
-.PHONY: build train eval dumb compare grid-eval grid-static grid-compare grid-demo demo tb dashboard down logs clean wandb-login blr-train blr-eval blr-static blr-compare blr-demo
+.PHONY: build train eval dumb compare grid-eval grid-static grid-compare grid-demo demo tb dashboard down logs clean wandb-login blr-train blr-eval blr-static blr-compare blr-demo c8-ppo-train
 
 # ═══════════════════════════════════════════════════════════════════
 # Docker-first workflow (reproducible, host-independent)
@@ -82,7 +82,11 @@ blr-dumb-demo:
 # Phase 3: CTDE MAPPO (Centralized Training, Decentralized Execution)
 # ──────────────────────────────────────────────────────────────
 
-# Train CTDE MAPPO agents (curriculum 0.75→1.5→2.0)
+# Train independent PPO agents on Cologne8
+c8-ppo-train:
+	docker compose run --rm -e MODE=c8-ppo-train agent $(ARGS)
+
+# Train CTDE MAPPO agents (curriculum 0.6→0.8→1.0)
 # Usage: make ctde-train ARGS="--timesteps 500000 --run-name ctde-run-1"
 ctde-train:
 	docker compose run --rm -e MODE=ctde-train agent $(ARGS)
