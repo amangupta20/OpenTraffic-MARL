@@ -100,6 +100,18 @@ make ctde-demo
 # Headless decentralized evaluation (no critic needed)
 make ctde-eval
 ```
+
+## Phase 4: Feudal MARL Architecture
+
+Train a hierarchical Feudal MARL system where a Macroscopic Manager Agent sets priority goals at a lower $c=4$ frequency (60s) for independent Microscopic Worker Agents running locally (15s).
+
+```bash
+# Train hierarchical Feudal MARL system
+make feudal-train ARGS="--run-name feudal-run-1 --timesteps 500000"
+
+# (Commands for feudal testing will similarly follow feudal-eval etc in the future)
+```
+
 ## Experiment Tracking (Weights & Biases)
 
 ```bash

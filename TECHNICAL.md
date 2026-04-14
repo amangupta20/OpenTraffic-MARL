@@ -696,3 +696,47 @@ make ctde-compare
 # Visual demo (open http://localhost:6080)
 make ctde-demo
 ```
+
+---
+
+## 10. Phase 4: Feudal MARL Architecture
+
+### 10.1 Overview
+
+Phase 4 implements a hierarchical **Feudal MARL** architecture designed to bridge the gap between macroscopic systemic goals and microscopic high-frequency traffic phase optimization. 
+
+**Core principle:**
+- **Manager (Macroscopic)** — Operates at a low frequency ($c=4$ environmental steps, corresponding to $60s$ of simulation elapsed time). It observes the global state and outputs explicit behavioral **Priority Vectors** ($g_i \in [0, 1]^3$) for each local junction worker.
+- **Workers (Microscopic)** — Operate at high frequency ($1$ environmental step, corresponding to $15s$ of minimum green times constraint). They append their assigned priority vector into their observation space and act independently to optimize a shaped intrinsic reward.
+
+### 10.2 Goal Formulation & Abstraction
+
+The Manager generates goals representing **traffic optimization priorities**:
+1. **Queue Size Management:** Clear buildup of halted vehicles.
+2. **Current Wait Time:** Prevent large accumulated waits on currently halted lanes.
+3. **Starvation Avoidance:** Prevent a specific lane from waiting indefinitely.
+
+Goals $g_i = [w_{queue}, w_{wait}, w_{starved}]$ are bounded within $[0, 1]^3$ via the `BoundedTanh` function, giving each worker mathematically interpretable objective weightings.
+
+**Zero-Order Hold:** Between Manager step $T$ and $T+c$, the generated goals $g$ are cached locally by workers to construct their environment observations.
+
+**Goal Dropout:** ~10% randomly masked Goals. This functions phenomenally as a training regularization technique, ensuring intersections don't completely lock up if Manager oversight is somehow lost or degraded.
+
+### 10.3 Reward Construction
+
+**Extrinsic Global Reward:**
+Calculated normally as the aggregate of penalties across all intersections. Used directly by the Manager PPO loop to optimize long-horizon global efficiency.
+
+**Intrinsic Worker Reward:**
+$$R_{worker} = \alpha R_{ext} + (1 - \alpha) R_{int}$$
+Where $\alpha = 0.5$, and $R_{int} = - \mathbf{g}_i \cdot \mathbf{m}_i$. 
+$\mathbf{m}_i$ consists of normalized local traffic statistics at the worker node. This forces the worker to explicitly lower the local metrics that the Manager assigned the highest weights to via $g_i$.
+
+### 10.4 Execution Model & Commands
+
+The model maintains separate Rollout Buffers and independent PPO optimizers for the multi-dimensional Manager (continuous action space) vs the Workers (discrete MultiDiscrete action space). 
+
+```bash
+# Train hierarchical Feudal MARL system
+make feudal-train ARGS="--run-name feudal-run-1 --timesteps 500000"
+```

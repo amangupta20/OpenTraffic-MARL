@@ -1,0 +1,511 @@
+"""
+Feudal MARL Training for Cologne8 Corridor.
+
+Dual PPO Architecture:
+- Macro Manager: Acts every `C` steps (e.g. 60s), observing Global State, outputting continuous Goal Priorities `g_i`.
+                 Receives purely Extrinsic Environment Reward (Global).
+- Micro Worker:  Acts every step (15s), observing Local State + `g_i`.
+                 Receives Extrinsic Reward + Intrinsic Reward (alignment with Manager goal priorities).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+import wandb
+
+from src.envs import make_env
+# Import Feudal specific networks
+from src.agents.feudal_networks import (
+    ManagerActorContinuous,
+    ManagerCritic,
+    ManagerRolloutBuffer,
+    FeudalWorkerActor,
+    FeudalWorkerRolloutBuffer,
+)
+from src.agents.mappo_networks import MAPPOCritic
+from src.utils.metrics import start_metrics_server
+
+MODELS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "models"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hyper-parameters
+# ─────────────────────────────────────────────────────────────────────────────
+# General PPO Params
+GAMMA          = 0.99
+GAE_LAMBDA     = 0.95
+CLIP_EPS       = 0.2
+MAX_GRAD_NORM  = 0.5
+REWARD_CLIP    = 500.0
+
+# Hierarchy Scaling
+MANAGER_C       = 4            # Manager operates every 4 environment steps (60s)
+WORKER_N_STEPS  = 480          # Worker rollout steps before update
+MANAGER_N_STEPS = WORKER_N_STEPS // MANAGER_C  # Manager rollout steps 
+N_EPOCHS        = 10           # PPO update epochs
+
+# Manager Learning Rates & Coefs
+MANGER_LR       = 1e-4
+MANAGER_ENTROPY = 0.05
+MANAGER_VALUE   = 0.5
+MANGER_BATCH    = MANAGER_N_STEPS // 4  # e.g., 120//4 = 30
+
+# Worker Learning Rates & Coefs
+WORKER_LR       = 3e-4
+WORKER_ENTROPY  = 0.05
+WORKER_VALUE    = 0.5
+WORKER_BATCH    = WORKER_N_STEPS // 8   # e.g., 480//8 = 60
+
+# Goal Definition
+K_GOAL_DIM      = 3            # Priorities: Queue Minimization, Wait Minimization, Coordination/Starvation
+GOAL_DROPOUT_P  = 0.1          # 10% chance to drop Manager's goal, fostering worker autonomy
+ALPHA           = 0.5          # Mixing parameter: R_worker = ALPHA * R_ext + (1 - ALPHA) * R_int
+
+# Curriculum: grades for the Cologne8 network
+CURRICULUM = [
+    (0.00, 0.60),   # Grade 1
+    (0.15, 0.80),   # Grade 2
+    (0.40, 1.00),   # Grade 3
+]
+
+
+class FeudalTrainer:
+    def __init__(
+        self,
+        total_timesteps: int,
+        run_name: str = "feudal-cologne8",
+        port: int = 8000,
+    ) -> None:
+        self.total_timesteps = total_timesteps
+        self.run_name = run_name
+        self.device = torch.device("cpu")
+
+        start_metrics_server(port)
+
+        # ── Discover network topology ──────────────────────────────────────
+        print("[Feudal] Discovering network topology...")
+        _probe = make_env("cologne8_corridor", use_gui=False, max_steps=3600, scale=0.6)
+        self.tls_ids: list[str] = _probe.tls_ids
+        self.obs_dims: dict[str, int] = {
+            t: _probe.observation_space.spaces[t].shape[0] for t in self.tls_ids
+        }
+        self.act_dims: dict[str, int] = {
+            t: int(_probe.action_space.spaces[t].n) for t in self.tls_ids
+        }
+        self.delta_time: int = _probe.delta_time
+        _probe.close()
+
+        self.max_obs_dim = max(self.obs_dims.values())
+        _sample_gs = _probe.get_global_state()
+        self.global_dim = _sample_gs.shape[0]
+
+        print(f"[Feudal] {len(self.tls_ids)} junctions | global_dim={self.global_dim}")
+
+        # ── Build Feudal Manager ──────────────────────────────────────────
+        self.n_agents = len(self.tls_ids)
+        self.manager_actor = ManagerActorContinuous(
+            global_dim=self.global_dim,
+            n_agents=self.n_agents,
+            k_goal_dim=K_GOAL_DIM
+        ).to(self.device)
+        self.manager_critic = ManagerCritic(self.global_dim).to(self.device)
+        
+        self.manager_optim = torch.optim.Adam(
+            list(self.manager_actor.parameters()) + list(self.manager_critic.parameters()),
+            lr=MANGER_LR
+        )
+        self.manager_buffer = ManagerRolloutBuffer(MANAGER_N_STEPS, self.global_dim, self.n_agents * K_GOAL_DIM)
+
+        # ── Build Workers (CTDE) ──────────────────────────────────────────
+        # Worker Critic sees Global State + Concatenated Goals
+        worker_global_dim = self.global_dim + (self.n_agents * K_GOAL_DIM)
+        
+        self.worker_actors: dict[str, FeudalWorkerActor] = {
+            t: FeudalWorkerActor(self.obs_dims[t], K_GOAL_DIM, self.act_dims[t]).to(self.device)
+            for t in self.tls_ids
+        }
+        self.worker_critic = MAPPOCritic(worker_global_dim, self.tls_ids).to(self.device)
+
+        self.worker_optims: dict[str, torch.optim.Adam] = {
+            t: torch.optim.Adam(self.worker_actors[t].parameters(), lr=WORKER_LR)
+            for t in self.tls_ids
+        }
+        self.worker_critic_optim = torch.optim.Adam(self.worker_critic.parameters(), lr=WORKER_LR)
+
+        self.worker_buffers: dict[str, FeudalWorkerRolloutBuffer] = {
+            t: FeudalWorkerRolloutBuffer(WORKER_N_STEPS, self.obs_dims[t], K_GOAL_DIM, worker_global_dim)
+            for t in self.tls_ids
+        }
+
+        # ── State keeping ──────────────────────────────────────────────────
+        self.current_scale = 0.6
+        self.steps_collected = 0
+        self._wall_start = time.time()
+        
+        # Zero-Order Hold state
+        self.zoh_manager_goals = np.zeros(self.n_agents * K_GOAL_DIM, dtype=np.float32)
+
+    def _get_target_scale(self) -> float:
+        progress = self.steps_collected / self.total_timesteps
+        target = CURRICULUM[0][1]
+        for thresh, scale in CURRICULUM:
+            if progress >= thresh:
+                target = scale
+        return target
+
+    def _update_manager(self):
+        """Update Manager PPO networks"""
+        # compute advantages
+        with torch.no_grad():
+            last_value = 0.0 # bootstrap conservative 0
+        adv, ret = self.manager_buffer.compute_returns_and_advantages(last_value, GAMMA, GAE_LAMBDA)
+        
+        # Normalize advantages
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        
+        tensors = self.manager_buffer.get_tensors(self.device)
+        gs_ts = tensors["global_state"]
+        a_ts  = tensors["actions"]
+        old_lp_ts = tensors["log_probs"]
+        ret_ts = torch.tensor(ret, device=self.device)
+        adv_ts = torch.tensor(adv, device=self.device)
+        
+        T = self.manager_buffer.ptr
+        indices = np.arange(T)
+        
+        metrics = {"fl/mgr_actor_loss": 0.0, "fl/mgr_critic_loss": 0.0, "fl/mgr_entropy": 0.0}
+        n_updates = 0
+        
+        for _ in range(N_EPOCHS):
+            np.random.shuffle(indices)
+            for start in range(0, T, MANGER_BATCH):
+                end = start + MANGER_BATCH
+                mb_idxs = indices[start:end]
+                
+                mb_gs = gs_ts[mb_idxs]
+                mb_a  = a_ts[mb_idxs]
+                mb_ret = ret_ts[mb_idxs]
+                mb_adv = adv_ts[mb_idxs]
+                mb_old_lp = old_lp_ts[mb_idxs]
+                
+                # Actor eval
+                new_lp, entropy = self.manager_actor.evaluate_actions(mb_gs, mb_a)
+                ratio = torch.exp(new_lp - mb_old_lp)
+                surr1 = ratio * mb_adv
+                surr2 = torch.clamp(ratio, 1.0 - CLIP_EPS, 1.0 + CLIP_EPS) * mb_adv
+                actor_loss = -torch.min(surr1, surr2).mean()
+                
+                # Critic eval
+                v_pred = self.manager_critic(mb_gs)
+                critic_loss = 0.5 * ((v_pred - mb_ret) ** 2).mean()
+                
+                loss = actor_loss - MANAGER_ENTROPY * entropy.mean() + MANAGER_VALUE * critic_loss
+                
+                self.manager_optim.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.manager_actor.parameters(), MAX_GRAD_NORM)
+                nn.utils.clip_grad_norm_(self.manager_critic.parameters(), MAX_GRAD_NORM)
+                self.manager_optim.step()
+                
+                metrics["fl/mgr_actor_loss"] += actor_loss.item()
+                metrics["fl/mgr_critic_loss"] += critic_loss.item()
+                metrics["fl/mgr_entropy"] += entropy.mean().item()
+                n_updates += 1
+                
+        self.manager_buffer.reset()
+        if n_updates > 0:
+            for k in metrics:
+                metrics[k] /= n_updates
+        return metrics
+
+    def _update_workers(self):
+        """Update Worker PPO networks"""
+        with torch.no_grad():
+            last_value_per_agent = {t: 0.0 for t in self.tls_ids}
+            
+        adv_dict, ret_dict = {}, {}
+        for t in self.tls_ids:
+            adv, ret = self.worker_buffers[t].compute_returns_and_advantages(
+                last_value_per_agent[t], GAMMA, GAE_LAMBDA
+            )
+            # Normalize
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            adv_dict[t] = adv
+            ret_dict[t] = ret
+
+        tensors = {t: self.worker_buffers[t].get_tensors(self.device) for t in self.tls_ids}
+        
+        metrics = {"fl/wk_actor_loss": 0.0, "fl/wk_critic_loss": 0.0, "fl/wk_entropy": 0.0}
+        n_updates = 0
+        
+        T = self.worker_buffers[self.tls_ids[0]].ptr
+        indices = np.arange(T)
+        
+        for _ in range(N_EPOCHS):
+            np.random.shuffle(indices)
+            for start in range(0, T, WORKER_BATCH):
+                end = start + WORKER_BATCH
+                mb_idxs = indices[start:end]
+                
+                self.worker_critic_optim.zero_grad()
+                critic_loss_total = 0.0
+                
+                # Tensors are aligned across agents
+                # Get the shared central worker state (same for all t)
+                mb_w_gs = tensors[self.tls_ids[0]]["global_state"][mb_idxs]
+                
+                # Critic forward pass (vectorized for all agents)
+                v_preds_all = self.worker_critic(mb_w_gs)
+                
+                for t in self.tls_ids:
+                    mb_obs = tensors[t]["local_obs"][mb_idxs]
+                    mb_g   = tensors[t]["goals"][mb_idxs]
+                    mb_a   = tensors[t]["actions"][mb_idxs]
+                    mb_old_lp = tensors[t]["log_probs"][mb_idxs]
+                    mb_ret = torch.tensor(ret_dict[t][mb_idxs], device=self.device)
+                    mb_adv = torch.tensor(adv_dict[t][mb_idxs], device=self.device)
+                    
+                    new_lp, entropy = self.worker_actors[t].evaluate_actions(mb_obs, mb_g, mb_a)
+                    ratio = torch.exp(new_lp - mb_old_lp)
+                    surr1 = ratio * mb_adv
+                    surr2 = torch.clamp(ratio, 1.0 - CLIP_EPS, 1.0 + CLIP_EPS) * mb_adv
+                    actor_loss = -torch.min(surr1, surr2).mean()
+                    
+                    self.worker_optims[t].zero_grad()
+                    al_total = actor_loss - WORKER_ENTROPY * entropy.mean()
+                    al_total.backward()
+                    nn.utils.clip_grad_norm_(self.worker_actors[t].parameters(), MAX_GRAD_NORM)
+                    self.worker_optims[t].step()
+                    
+                    v_pred = v_preds_all[t]
+                    c_loss = 0.5 * ((v_pred - mb_ret)**2).mean()
+                    critic_loss_total = critic_loss_total + c_loss
+                    
+                    metrics["fl/wk_actor_loss"] += actor_loss.item()
+                    metrics["fl/wk_entropy"] += entropy.mean().item()
+                    
+                critic_loss_total = WORKER_VALUE * critic_loss_total
+                critic_loss_total.backward()
+                nn.utils.clip_grad_norm_(self.worker_critic.parameters(), MAX_GRAD_NORM)
+                self.worker_critic_optim.step()
+                
+                metrics["fl/wk_critic_loss"] += critic_loss_total.item()
+                n_updates += len(self.tls_ids)
+                
+        for t in self.tls_ids:
+            self.worker_buffers[t].reset()
+            
+        if n_updates > 0:
+            for k in metrics:
+                metrics[k] /= n_updates
+        return metrics
+
+    def run(self):
+        print(f"[Feudal] Starting Training. Logging to wandb run: {wandb.run.name}")
+        env = make_env("cologne8_corridor", use_gui=False, max_steps=3600, scale=self.current_scale)
+        obs, _ = env.reset()
+        
+        ep_ext_rewards = {t: 0.0 for t in self.tls_ids}
+        ep_manager_reward = 0.0
+        
+        while self.steps_collected < self.total_timesteps:
+            # Curriculum check
+            target_scale = self._get_target_scale()
+            if abs(target_scale - self.current_scale) > 0.01:
+                print(f"[Feudal] Curriculum advanced! Scale {self.current_scale:.2f} → {target_scale:.2f}")
+                self.current_scale = target_scale
+                env.close()
+                env = make_env("cologne8_corridor", use_gui=False, max_steps=3600, scale=self.current_scale)
+                obs, _ = env.reset()
+
+            global_state = env.get_global_state()
+            worker_actions_dict = {}
+            
+            # ─────────────────────────────────────────────────────────────────
+            # Manager Step (Every MANAGER_C env steps)
+            # ─────────────────────────────────────────────────────────────────
+            # Environment step_count corresponds to the physical step * delta_time
+            # For iteration tracking, we just use steps_collected.
+            
+            is_manager_step = (self.steps_collected % MANAGER_C == 0)
+            
+            if is_manager_step:
+                gs_ts = torch.tensor(global_state, dtype=torch.float32, device=self.device)
+                with torch.no_grad():
+                    mgr_a, mgr_lp, _ = self.manager_actor.get_action_and_logprob(gs_ts)
+                    mgr_v = self.manager_critic(gs_ts)
+                    
+                # Cache action for Zero-Order Hold
+                self.zoh_manager_goals = mgr_a.cpu().numpy()
+                mgr_action_val = self.zoh_manager_goals
+                mgr_lp_val = mgr_lp.item()
+                mgr_v_val = mgr_v.item()
+            else:
+                mgr_action_val = self.zoh_manager_goals
+                
+            # Simulate Goal Dropout Regulatory Mechanism (for robustness)
+            if np.random.rand() < GOAL_DROPOUT_P:
+                effective_goals_flat = np.zeros_like(self.zoh_manager_goals)
+            else:
+                effective_goals_flat = self.zoh_manager_goals
+                
+            # The manager's priority vector output is scaled to [0,1] for calculating Intrinsic Reward
+            # `tanh` bound is [-1, 1], so we map [-1, 1] -> [0, 1]
+            priority_weights = (effective_goals_flat + 1.0) / 2.0
+            
+            # Reconstruct the central global input for workers (global state + effective goals)
+            worker_global_input = np.concatenate([global_state, effective_goals_flat])
+            w_gs_ts = torch.tensor(worker_global_input, dtype=torch.float32, device=self.device)
+            
+            # Central Critic for workers
+            with torch.no_grad():
+                w_v_dict = self.worker_critic(w_gs_ts)
+                
+            # ─────────────────────────────────────────────────────────────────
+            # Worker Step (Every 1 step)
+            # ─────────────────────────────────────────────────────────────────
+            w_action_data = {}
+            for i, t in enumerate(self.tls_ids):
+                # Extract the 3D goal vector assigned to this worker
+                w_goal = effective_goals_flat[i*K_GOAL_DIM : (i+1)*K_GOAL_DIM]
+                
+                o_ts = torch.tensor(obs[t], dtype=torch.float32, device=self.device)
+                g_ts = torch.tensor(w_goal, dtype=torch.float32, device=self.device)
+                
+                with torch.no_grad():
+                    a, lp, _ = self.worker_actors[t].get_action_and_logprob(o_ts, g_ts)
+                
+                action_idx = a.item()
+                worker_actions_dict[t] = action_idx
+                
+                w_action_data[t] = {
+                    "a": action_idx,
+                    "lp": lp.item(),
+                    "v": w_v_dict[t].item(),
+                    "goal": w_goal,
+                }
+
+            # Step the environment
+            next_obs, global_ext_reward, terminated, _, info = env.step(worker_actions_dict)
+            self.steps_collected += 1
+            
+            # Accumulate manager reward over the C steps (Manager is optimized for environmental global reward)
+            # Clip manager rewards for stability
+            clipped_manager_r = np.clip(global_ext_reward / 100.0, -REWARD_CLIP, REWARD_CLIP)
+            ep_manager_reward += clipped_manager_r
+            
+            if is_manager_step:
+                # Add manager transition to buffer (using the reward acquired so far)
+                self.manager_buffer.add(
+                    gs=global_state, 
+                    a=mgr_action_val, 
+                    lp=mgr_lp_val, 
+                    r=ep_manager_reward, 
+                    v=mgr_v_val, 
+                    d=terminated
+                )
+                ep_manager_reward = 0.0 # reset for next c steps
+                
+            # Calculate composite worker rewards and add to buffers
+            for i, t in enumerate(self.tls_ids):
+                # 1. Extrinsic Reward
+                r_ext = info["per_junction"][t]["reward"]
+                
+                # 2. Extract metrics for intrinsic shaping
+                # metric indices: (queue = 0, wait = 2) from junction features
+                # and starved feature explicitly calculable but here we approximate via switch penalties
+                # Weight vectors shape [3] -> align to penalties
+                w_goal_prob = priority_weights[i*K_GOAL_DIM : (i+1)*K_GOAL_DIM]
+                
+                q_penalty = obs[t][0] # Queue length is index 0
+                w_penalty = obs[t][1] # Note: The full state extracts mean wait, simplistic approximation here if not exact
+                
+                # Simplify Intrinsic: dot product of Manager priority goals vs raw penalties
+                r_int = - (w_goal_prob[0] * q_penalty + w_goal_prob[1] * w_penalty)
+                
+                # Mix rewards
+                r_worker = ALPHA * r_ext + (1.0 - ALPHA) * r_int
+                r_worker_clipped = np.clip(r_worker, -REWARD_CLIP, REWARD_CLIP)
+                
+                ep_ext_rewards[t] += r_ext
+                
+                self.worker_buffers[t].add(
+                    obs=obs[t],
+                    goal=w_action_data[t]["goal"],
+                    gs=worker_global_input, # CTDE global view
+                    a=w_action_data[t]["a"],
+                    lp=w_action_data[t]["lp"],
+                    r=r_worker_clipped,
+                    v=w_action_data[t]["v"],
+                    d=terminated
+                )
+                
+            obs = next_obs
+            
+            # Endpoint logic
+            if terminated:
+                sum_ext_reward = sum(ep_ext_rewards.values())
+                wandb.log({
+                    "env/global_reward": sum_ext_reward,
+                    "env/curriculum_scale": self.current_scale,
+                    "env/throughput": info.get("throughput", 0)
+                }, step=self.steps_collected)
+                
+                obs, _ = env.reset()
+                ep_ext_rewards = {t: 0.0 for t in self.tls_ids}
+                ep_manager_reward = 0.0
+                
+            # Perform updates if buffers are full
+            if self.worker_buffers[self.tls_ids[0]].is_full():
+                m_metrics = self._update_manager()
+                w_metrics = self._update_workers()
+                
+                wall_time = time.time() - self._wall_start
+                wandb.log({**m_metrics, **w_metrics, "perf/wall_time_s": wall_time}, step=self.steps_collected)
+                
+                print(f"[{self.steps_collected:08d}] M_Loss: {m_metrics['fl/mgr_actor_loss']:.3f} | W_Loss: {w_metrics['fl/wk_actor_loss']:.3f}")
+
+        env.close()
+        
+        # Save models
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        torch.save({
+            "manager_actor": self.manager_actor.state_dict(),
+            "manager_critic": self.manager_critic.state_dict(),
+            "worker_actors": {t: a.state_dict() for t, a in self.worker_actors.items()},
+        }, MODELS_DIR / f"{self.run_name}.pt")
+        print("[Feudal] Training Complete. Model saved.")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", action="store_true")
+    parser.add_argument("--timesteps", type=int, default=1000000)
+    parser.add_argument("--run-name", type=str, default="c8-feudal-mappo")
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+
+    if args.train:
+        wandb.init(
+            project="marl-traffic",
+            name=args.run_name,
+            config={
+                "gamma": GAMMA,
+                "gae_lambda": GAE_LAMBDA,
+                "clip_eps": CLIP_EPS,
+                "mgr_lr": MANGER_LR,
+                "wk_lr": WORKER_LR,
+            }
+        )
+        trainer = FeudalTrainer(
+            total_timesteps=args.timesteps,
+            run_name=args.run_name,
+            port=args.port,
+        )
+        trainer.run()
+        wandb.finish()
