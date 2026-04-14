@@ -467,9 +467,23 @@ class FeudalTrainer:
                 w_metrics = self._update_workers()
                 
                 wall_time = time.time() - self._wall_start
-                wandb.log({**m_metrics, **w_metrics, "perf/wall_time_s": wall_time}, step=self.steps_collected)
                 
-                print(f"[{self.steps_collected:08d}] M_Loss: {m_metrics['fl/mgr_actor_loss']:.3f} | W_Loss: {w_metrics['fl/wk_actor_loss']:.3f}")
+                if not hasattr(self, '_last_log_time'):
+                    self._last_log_time = self._wall_start
+                    self._last_log_steps = 0
+                
+                dt = time.time() - self._last_log_time
+                d_steps = self.steps_collected - self._last_log_steps
+                fps = int(d_steps / dt) if dt > 0 else 0
+                
+                self._last_log_time = time.time()
+                self._last_log_steps = self.steps_collected
+                
+                progress_pct = (self.steps_collected / self.total_timesteps) * 100.0
+                
+                wandb.log({**m_metrics, **w_metrics, "perf/wall_time_s": wall_time, "perf/fps": fps}, step=self.steps_collected)
+                
+                print(f"[{self.steps_collected:08d} | {progress_pct:5.1f}% | FPS: {fps:4d}] M_Loss: {m_metrics['fl/mgr_actor_loss']:.3f} | W_Loss: {w_metrics['fl/wk_actor_loss']:.3f}")
 
         env.close()
         
