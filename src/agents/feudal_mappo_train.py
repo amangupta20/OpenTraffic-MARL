@@ -79,6 +79,7 @@ CURRICULUM = [
     (0.00, 0.60),   # Grade 1
     (0.15, 0.80),   # Grade 2
     (0.40, 1.00),   # Grade 3
+    (0.70, 1.30),   # Grade 4
 ]
 
 
@@ -421,8 +422,8 @@ class FeudalTrainer:
                 for i, t in enumerate(self.tls_ids):
                     r_ext = info.get("per_junction", {}).get(t, {}).get("reward", 0.0)
                     pw    = priority_weights[env_idx, i * K_GOAL_DIM:(i + 1) * K_GOAL_DIM]
-                    q_pen = obs_list[env_idx][t][0]
-                    w_pen = obs_list[env_idx][t][1]
+                    q_pen = float(info.get("per_junction", {}).get(t, {}).get("queue_length", 0.0)) / 20.0
+                    w_pen = float(info.get("per_junction", {}).get(t, {}).get("wait_time", 0.0)) / 300.0
                     r_int = -(pw[0] * q_pen + pw[1] * w_pen)
                     r_w   = float(np.clip(ALPHA * r_ext + (1.0 - ALPHA) * r_int, -REWARD_CLIP, REWARD_CLIP))
 
