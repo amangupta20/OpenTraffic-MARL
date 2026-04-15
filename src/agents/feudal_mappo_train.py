@@ -184,8 +184,12 @@ class FeudalTrainer:
     def _update_manager(self):
         """Update Manager PPO networks"""
         with torch.no_grad():
-            last_value = 0.0
-        adv, ret = self.manager_buffer.compute_returns_and_advantages(last_value, GAMMA, GAE_LAMBDA)
+            gs_ts = torch.tensor(np.array(self._cached_gs), dtype=torch.float32, device=self.device)
+            last_values = self.manager_critic(gs_ts).cpu().numpy().flatten().tolist()
+            
+        adv, ret = self.manager_buffer.compute_returns_and_advantages(
+            last_values, GAMMA, GAE_LAMBDA, self.num_envs
+        )
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
         tensors = self.manager_buffer.get_tensors(self.device)
@@ -239,9 +243,21 @@ class FeudalTrainer:
 
     def _update_workers(self):
         """Update Worker PPO networks"""
+        last_values_dict = {t: [] for t in self.tls_ids}
+        with torch.no_grad():
+            w_gs_list = []
+            for env_idx in range(self.num_envs):
+                w_gs_list.append(np.concatenate([self._cached_gs[env_idx], self.zoh_goals[env_idx]]))
+            w_gs_ts = torch.tensor(np.array(w_gs_list), dtype=torch.float32, device=self.device)
+            v_preds = self.worker_critic(w_gs_ts)
+            for t in self.tls_ids:
+                last_values_dict[t] = v_preds[t].cpu().numpy().flatten().tolist()
+
         adv_dict, ret_dict = {}, {}
         for t in self.tls_ids:
-            adv, ret = self.worker_buffers[t].compute_returns_and_advantages(0.0, GAMMA, GAE_LAMBDA)
+            adv, ret = self.worker_buffers[t].compute_returns_and_advantages(
+                last_values_dict[t], GAMMA, GAE_LAMBDA, self.num_envs
+            )
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             adv_dict[t] = adv
             ret_dict[t] = ret
