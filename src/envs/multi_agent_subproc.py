@@ -41,11 +41,14 @@ def _worker_loop(remote: mp.connection.Connection, parent_remote: mp.connection.
                     # Note: Since obs here is a dict of all agents, we store the full dict
                     info["terminal_observation"] = obs
                     obs, reset_info = env.reset()
-                    # optionally merge reset_info into info
+                    if hasattr(env, "get_global_state"):
+                        info["new_global_state"] = env.get_global_state()
                 remote.send((obs, reward, terminated, truncated, info))
                 
             elif cmd == "reset":
                 obs, info = env.reset()
+                if hasattr(env, "get_global_state"):
+                    info["global_state"] = env.get_global_state()
                 remote.send((obs, info))
                 
             elif cmd == "set_scale":

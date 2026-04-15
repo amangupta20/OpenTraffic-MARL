@@ -317,6 +317,8 @@ class FeudalTrainer:
         # Initial reset — returns list of (obs_dict, info_dict) per env
         reset_results = multi_env.reset()
         obs_list = [r[0] for r in reset_results]    # list[dict[tls_id, np.ndarray]]
+        self._cached_gs = [r[1].get("global_state", np.zeros(self.global_dim, dtype=np.float32)) for r in reset_results]
+        self._mgr_s     = [np.zeros(self.global_dim, dtype=np.float32) for _ in range(self.num_envs)]
 
         ep_ext_rewards = [{t: 0.0 for t in self.tls_ids} for _ in range(self.num_envs)]
 
@@ -329,22 +331,19 @@ class FeudalTrainer:
                 self.current_scale = target_scale
                 multi_env.set_scale(target_scale)
 
-            # ── Manager Step (every MANAGER_C steps) — one decision per env ──
-            is_manager_step = (self.steps_collected % MANAGER_C == 0)
+            # ── Manager Step (Decision phase) ──
+            current_env_step = self.steps_collected // self.num_envs
+            is_manager_decision_step = (current_env_step % MANAGER_C == 0)
 
-            # We need per-env global states. Since envs are in subprocesses we
-            # approximate with the obs from the last step (consistent with ZOH design).
-            # Full global_state is returned inside the info dict on each step; we
-            # cache it below.  On the very first step we use zeros (ZOH holds fine).
             for env_idx in range(self.num_envs):
-                if is_manager_step:
-                    # Use the cached global state for this env (set after first real step)
-                    gs = getattr(self, "_cached_gs", [np.zeros(self.global_dim)] * self.num_envs)[env_idx]
+                if is_manager_decision_step:
+                    gs = self._cached_gs[env_idx]
                     gs_ts = torch.tensor(gs, dtype=torch.float32, device=self.device)
                     with torch.no_grad():
                         mgr_a, mgr_lp, _ = self.manager_actor.get_action_and_logprob(gs_ts)
                         mgr_v = self.manager_critic(gs_ts)
                     self.zoh_goals[env_idx] = mgr_a.cpu().numpy()
+                    self._mgr_s[env_idx]    = gs.copy()
                     self._mgr_lp[env_idx]   = mgr_lp.item()
                     self._mgr_v[env_idx]    = mgr_v.item()
 
@@ -387,13 +386,18 @@ class FeudalTrainer:
             self.steps_collected += self.num_envs
 
             # ── Process results from each env ─────────────────────────────────
+            is_manager_write_step = ((current_env_step + 1) % MANAGER_C == 0)
+
             cached_gs = []
             for env_idx, res in enumerate(results):
                 next_obs, _global_rew, terminated, truncated, info = res
                 done = terminated or truncated
 
                 # Real global state piggybacked from subprocess via info dict
-                gs = info["global_state"]
+                gs = info.get("global_state", np.zeros(self.global_dim, dtype=np.float32))
+                if done:
+                    gs = info.get("new_global_state", gs)
+                    self.zoh_goals[env_idx] = 0.0  # Zero the hold on a new episode
                 cached_gs.append(gs)
 
                 worker_global_input = np.concatenate([gs, effective_goals[env_idx]])
@@ -407,16 +411,18 @@ class FeudalTrainer:
                 clipped_mgr_r = float(np.clip(global_ext_reward / 100.0, -REWARD_CLIP, REWARD_CLIP))
                 self._ep_mgr_reward[env_idx] += clipped_mgr_r
 
-                if is_manager_step:
-                    self.manager_buffer.add(
-                        gs=gs,
-                        a=self.zoh_goals[env_idx],
-                        lp=self._mgr_lp[env_idx],
-                        r=self._ep_mgr_reward[env_idx],
-                        v=self._mgr_v[env_idx],
-                        d=done
-                    )
-                    self._ep_mgr_reward[env_idx] = 0.0
+                if is_manager_write_step or done:
+                    if np.any(self._mgr_s[env_idx]):
+                        self.manager_buffer.add(
+                            gs=self._mgr_s[env_idx],
+                            a=self.zoh_goals[env_idx],
+                            lp=self._mgr_lp[env_idx],
+                            r=self._ep_mgr_reward[env_idx],
+                            v=self._mgr_v[env_idx],
+                            d=done
+                        )
+                        self._ep_mgr_reward[env_idx] = 0.0
+                        self._mgr_s[env_idx] = np.zeros(self.global_dim, dtype=np.float32)
 
                 # ── Worker buffer write ───────────────────────────────────────
                 for i, t in enumerate(self.tls_ids):
