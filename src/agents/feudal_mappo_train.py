@@ -202,7 +202,7 @@ class FeudalTrainer:
         T = self.manager_buffer.ptr
         indices = np.arange(T)
 
-        metrics = {"fl/mgr_actor_loss": 0.0, "fl/mgr_critic_loss": 0.0, "fl/mgr_entropy": 0.0}
+        metrics = {"fl/mgr_actor_loss": 0.0, "fl/mgr_critic_loss": 0.0, "fl/mgr_entropy": 0.0, "fl/mgr_buffer_size": T}
         n_updates = 0
 
         for _ in range(N_EPOCHS):
@@ -238,7 +238,8 @@ class FeudalTrainer:
         self.manager_buffer.reset()
         if n_updates > 0:
             for k in metrics:
-                metrics[k] /= n_updates
+                if k != "fl/mgr_buffer_size":
+                    metrics[k] /= n_updates
         return metrics
 
     def _update_workers(self):
@@ -335,6 +336,7 @@ class FeudalTrainer:
         obs_list = [r[0] for r in reset_results]    # list[dict[tls_id, np.ndarray]]
         self._cached_gs = [r[1].get("global_state", np.zeros(self.global_dim, dtype=np.float32)) for r in reset_results]
         self._mgr_s     = [np.zeros(self.global_dim, dtype=np.float32) for _ in range(self.num_envs)]
+        self._mgr_has_active_decision = [False] * self.num_envs
 
         ep_ext_rewards = [{t: 0.0 for t in self.tls_ids} for _ in range(self.num_envs)]
 
@@ -362,6 +364,7 @@ class FeudalTrainer:
                     self._mgr_s[env_idx]    = gs.copy()
                     self._mgr_lp[env_idx]   = mgr_lp.item()
                     self._mgr_v[env_idx]    = mgr_v.item()
+                    self._mgr_has_active_decision[env_idx] = True
 
             # ── Build actions for all envs in one batched forward pass ────────
             # Clip raw Manager unbounded actions to valid goal range [-1, 1]
@@ -415,7 +418,6 @@ class FeudalTrainer:
                 # Real global state piggybacked from subprocess via info dict
                 gs = info.get("global_state", np.zeros(self.global_dim, dtype=np.float32))
                 if done:
-                    gs = info.get("new_global_state", gs)
                     self.zoh_goals[env_idx] = 0.0  # Zero the hold on a new episode
                 cached_gs.append(gs)
 
@@ -430,18 +432,18 @@ class FeudalTrainer:
                 clipped_mgr_r = float(np.clip(global_ext_reward / 100.0, -REWARD_CLIP, REWARD_CLIP))
                 self._ep_mgr_reward[env_idx] += clipped_mgr_r
 
-                if is_manager_write_step or done:
-                    if np.any(self._mgr_s[env_idx]):
-                        self.manager_buffer.add(
-                            gs=self._mgr_s[env_idx],
-                            a=self.zoh_goals[env_idx],
-                            lp=self._mgr_lp[env_idx],
-                            r=self._ep_mgr_reward[env_idx],
-                            v=self._mgr_v[env_idx],
-                            d=done
-                        )
-                        self._ep_mgr_reward[env_idx] = 0.0
-                        self._mgr_s[env_idx] = np.zeros(self.global_dim, dtype=np.float32)
+                if (is_manager_write_step or done) and self._mgr_has_active_decision[env_idx]:
+                    self.manager_buffer.add(
+                        gs=self._mgr_s[env_idx],
+                        a=self.zoh_goals[env_idx],
+                        lp=self._mgr_lp[env_idx],
+                        r=self._ep_mgr_reward[env_idx],
+                        v=self._mgr_v[env_idx],
+                        d=done
+                    )
+                    self._ep_mgr_reward[env_idx] = 0.0
+                    self._mgr_s[env_idx] = np.zeros(self.global_dim, dtype=np.float32)
+                    self._mgr_has_active_decision[env_idx] = False
 
                 # ── Worker buffer write ───────────────────────────────────────
                 for i, t in enumerate(self.tls_ids):
@@ -450,7 +452,8 @@ class FeudalTrainer:
                     q_pen = float(info.get("per_junction", {}).get(t, {}).get("queue_length", 0.0)) / 20.0
                     w_pen = float(info.get("per_junction", {}).get(t, {}).get("wait_time", 0.0)) / 300.0
                     r_int = -(pw[0] * q_pen + pw[1] * w_pen)
-                    r_w   = float(np.clip(ALPHA * r_ext + (1.0 - ALPHA) * r_int, -REWARD_CLIP, REWARD_CLIP))
+                    alpha_warmup = min(ALPHA, 0.5 * (self.steps_collected / (0.3 * self.total_timesteps)))
+                    r_w   = float(np.clip((1.0 - alpha_warmup) * r_ext + alpha_warmup * r_int, -REWARD_CLIP, REWARD_CLIP))
 
                     ep_ext_rewards[env_idx][t] += r_ext
 
