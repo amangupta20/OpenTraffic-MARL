@@ -364,8 +364,11 @@ class FeudalTrainer:
                     self._mgr_v[env_idx]    = mgr_v.item()
 
             # ── Build actions for all envs in one batched forward pass ────────
+            # Clip raw Manager unbounded actions to valid goal range [-1, 1]
+            clipped_goals = np.clip(self.zoh_goals, -1.0, 1.0)
+            
             # effective_goals[env_idx] = goals with 10% dropout
-            effective_goals = self.zoh_goals.copy()
+            effective_goals = clipped_goals.copy()
             dropout_mask = np.random.rand(self.num_envs) < GOAL_DROPOUT_P
             effective_goals[dropout_mask] = 0.0
 

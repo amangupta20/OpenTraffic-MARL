@@ -32,11 +32,10 @@ class ManagerActorContinuous(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden, hidden),
             nn.ReLU(),
-            nn.Linear(hidden, self.output_dim),
-            nn.Tanh() # Bounding goals between -1 and 1
+            nn.Linear(hidden, self.output_dim)
         )
-        # Log std is independent of state, a standard continuous PPO practice
-        self.log_std = nn.Parameter(torch.zeros(self.output_dim))
+        # Log std is independent of state, start at -0.5 for stable exploration
+        self.log_std = nn.Parameter(torch.ones(self.output_dim) * -0.5)
 
     def forward(self, global_state: torch.Tensor) -> torch.Tensor:
         return self.net(global_state)
@@ -46,11 +45,11 @@ class ManagerActorContinuous(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample goals and return log-prob and entropy."""
         mu = self.forward(global_state)
-        std = self.log_std.exp().expand_as(mu)
+        log_std = torch.clamp(self.log_std, min=-20.0, max=2.0)
+        std = log_std.exp().expand_as(mu)
         dist = Normal(mu, std)
         
         action = dist.sample()
-        # Bound actions between -1 and 1 if desired, but our mean is bounded.
         # Log prob is the sum across dimensions
         log_prob = dist.log_prob(action).sum(dim=-1)
         entropy = dist.entropy().sum(dim=-1)
@@ -61,7 +60,8 @@ class ManagerActorContinuous(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Evaluate log-prob and entropy of given goals."""
         mu = self.forward(global_state)
-        std = self.log_std.exp().expand_as(mu)
+        log_std = torch.clamp(self.log_std, min=-20.0, max=2.0)
+        std = log_std.exp().expand_as(mu)
         dist = Normal(mu, std)
         log_prob = dist.log_prob(actions).sum(dim=-1)
         entropy = dist.entropy().sum(dim=-1)
